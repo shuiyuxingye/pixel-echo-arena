@@ -8,6 +8,18 @@
 测试使用 Vitest。单页静态前端，无后端、无数据库、无 API Key，运行时不需要联网获取
 模型、字体或素材。
 
+## 下一版：V0.2 商店与构筑（设计中）
+
+当前可玩版本仍是V0.1。新版准备把四职业改名为爆破手、术士、骑士、战术家，重绘人物与怪物；增加18波、波间商店、U/I自由技能、带代价的道具、宝箱结算、精英核心、三件合成与48种海克斯。
+
+- [新版PRD](tasks/prd-v0.2-buildcraft.md)
+- [系统与数值](docs/design/v0.2/01-systems-and-balance.md)
+- [道具、技能、配方与海克斯目录](docs/design/v0.2/02-content-catalog.md)
+- [新美术与商店界面设计](docs/design/v0.2/03-art-and-interface.md)
+- [旧PRD归档](tasks/archive/v0.1/README.md)
+
+以上是设计稿与概念母版，尚未替换到游戏中。公开仓库采用[干净发布快照](docs/PUBLISHING.md)，不包含本机完整自动开发记录。
+
 ## 先选你的使用方式
 
 **只想玩或发给朋友**：使用 `output/share/game/像素回响.html`，或解压 `output/share/像素回响-轻量游戏包.zip` 后双击 HTML。无需安装 Node、Python 或 Claude。浏览器存档留在本机，不随游戏文件分享。

@@ -1,0 +1,4 @@
+preset,kill_fraction,normal_kills,average_gold_per_kill,kill_gold,clear_gold,elite_gold,starting_gold,total_gold,chest_items,core_items
+低收益,0.45,299,2.4,718,765,110,40,1633,6,2
+普通构筑,0.7,464,2.4,1114,765,220,40,2139,6,4
+高收益,0.9,597,2.4,1433,765,220,40,2458,6,4

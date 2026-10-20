@@ -1,7 +1,7 @@
 # 游戏设计基线｜像素回响：泰拉试炼
 
 本文件是 Harness 各角色的产品规则与数值基线，来源为用户已确认的
-`tasks/prd-pixel-echo-arena.md`。实现时以本文件的数值为准；调整数值必须记录理由并同步
+`tasks/archive/v0.1/prd-pixel-echo-arena.md`。实现时以本文件的数值为准；调整数值必须记录理由并同步
 验收基线，不得删除角色机制来降低难度。工程规范见 `docs/patterns-*.md`。
 
 ## §3 局流程与状态机
