@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="300" viewBox="0 0 1000 300" role="img"><title>游戏存档与浏览器之间的关系</title>
+<rect x="0" y="0" width="1000" height="300" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<rect x="30" y="55" width="270" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="30" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="50" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">固定这份游戏文件</text>
+<text x="50" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">尽量不要改名或移动</text>
+<line x1="310" y1="110" x2="370" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="370,110 359.1946347717679,115.21958640933477 359.1946347717679,104.78041359066523" fill="#087F8C"/>
+<rect x="380" y="55" width="270" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="380" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="400" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">同一个浏览器</text>
+<text x="400" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">不要使用隐私窗口</text>
+<line x1="660" y1="110" x2="720" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="720,110 709.1946347717678,115.21958640933477 709.1946347717678,104.78041359066523" fill="#087F8C"/>
+<rect x="730" y="55" width="240" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="730" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="750" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">本机存档</text>
+<text x="750" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">设置 / 续局 / 成绩</text>
+<text x="500" y="226" font-family="STHeiti, PingFang SC, sans-serif" font-size="23" fill="#172B36" text-anchor="middle">存档不包含在分享文件里，不会随 ZIP 发给朋友。</text>
+<text x="500" y="264" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="middle">刷新恢复最近检查点，不保证精确回到关闭前一帧。</text>
+</svg>

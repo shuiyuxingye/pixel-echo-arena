@@ -1,0 +1,409 @@
+{
+  "story": "US-026b",
+  "generatedAt": "2026-10-20T02:22:08.465Z",
+  "url": "http://localhost:5343/?dev=1&perf=1&character=muelsyse&seed=20261020&upgrades=M01",
+  "character": "muelsyse",
+  "seed": 20261020,
+  "durationSeconds": 60,
+  "thresholds": {
+    "minAverageFps": 50,
+    "enemies": 80,
+    "projectiles": 40,
+    "manifolds": 3,
+    "restarts": 5
+  },
+  "performance": {
+    "fps": {
+      "running": false,
+      "targetSeconds": 60,
+      "elapsedMs": 60000,
+      "frames": 3601,
+      "averageFps": 60.016666666666666,
+      "minSecondFps": 59.86828976234442,
+      "maxSecondFps": 60.15779092702169,
+      "perSecond": [
+        60.033461272968474,
+        60.027553631879144,
+        60.122215650958466,
+        59.940059940059946,
+        59.94604855683481,
+        59.98033431661751,
+        60.027553630998916,
+        59.98623266756068,
+        60.033461273848864,
+        59.99803285120605,
+        60.0511911795422,
+        60,
+        59.90376117075374,
+        60.06301693527274,
+        60.003934684593396,
+        59.982005398559195,
+        60.033461272968474,
+        59.994000600297554,
+        60,
+        59.988002399341354,
+        59.98623266756068,
+        60.02164715160768,
+        60,
+        60,
+        59.94604855683481,
+        60.08076430541099,
+        59.98800240023507,
+        59.988002399341354,
+        59.89787902557244,
+        60.110366574871044,
+        60.009837678307925,
+        60.009837678307925,
+        60,
+        60,
+        60,
+        60.015741833571695,
+        59.93407252058459,
+        60.15779092702169,
+        59.93407252058459,
+        59.97600959580419,
+        60,
+        59.994000600297554,
+        60.003934683713865,
+        60.027553630998916,
+        59.976009596697544,
+        60.009837678307925,
+        60.015741833571695,
+        60,
+        59.988002399341354,
+        60.02164715160768,
+        59.994000600297554,
+        60.015741833571695,
+        59.982005398559195,
+        60.015741833571695,
+        59.994000600297554,
+        59.86828976234442,
+        60.1399980283735,
+        59.994000600297554,
+        60.003934683713865
+      ],
+      "visibility": "visible"
+    },
+    "countSamples": [
+      {
+        "atSeconds": 5.0156000000089405,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 10.027100000008941,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 15.03470000000298,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 20.042400000005962,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 25.05310000000894,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 30.06520000000298,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 35.07420000000298,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 40.08220000000298,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 45.09070000000298,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 50.10060000000894,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 55.10940000000596,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      },
+      {
+        "atSeconds": 60,
+        "aliveEnemies": 80,
+        "enemyProjectiles": 40,
+        "manifolds": 3,
+        "paused": false
+      }
+    ],
+    "countsAfter": {
+      "canvasCount": 1,
+      "liveGames": 1,
+      "displayObjects": 654,
+      "physicsBodies": 1,
+      "tweens": 6,
+      "timers": 1,
+      "activeScenes": 1,
+      "settingsSubscribers": 2,
+      "inputListeners": {
+        "keydown": 1,
+        "keyup": 1,
+        "gameBlur": 4,
+        "sceneShutdown": 15
+      },
+      "domListeners": {
+        "total": 89,
+        "window": 5,
+        "document": 12,
+        "canvas": 8,
+        "other": 64
+      },
+      "aliveEnemies": 80,
+      "enemyProjectiles": 40,
+      "manifolds": 3
+    },
+    "failures": [],
+    "pass": true
+  },
+  "leak": {
+    "baseline": {
+      "canvasCount": 1,
+      "liveGames": 1,
+      "displayObjects": 654,
+      "physicsBodies": 1,
+      "tweens": 6,
+      "timers": 1,
+      "activeScenes": 1,
+      "settingsSubscribers": 2,
+      "inputListeners": {
+        "keydown": 1,
+        "keyup": 1,
+        "gameBlur": 4,
+        "sceneShutdown": 15
+      },
+      "domListeners": {
+        "total": 89,
+        "window": 5,
+        "document": 12,
+        "canvas": 8,
+        "other": 64
+      },
+      "aliveEnemies": 80,
+      "enemyProjectiles": 40,
+      "manifolds": 3
+    },
+    "restarts": [
+      {
+        "index": 1,
+        "counts": {
+          "canvasCount": 1,
+          "liveGames": 1,
+          "displayObjects": 661,
+          "physicsBodies": 1,
+          "tweens": 16,
+          "timers": 3,
+          "activeScenes": 1,
+          "settingsSubscribers": 3,
+          "inputListeners": {
+            "keydown": 1,
+            "keyup": 1,
+            "gameBlur": 4,
+            "sceneShutdown": 15
+          },
+          "domListeners": {
+            "total": 91,
+            "window": 5,
+            "document": 13,
+            "canvas": 9,
+            "other": 64
+          },
+          "aliveEnemies": 80,
+          "enemyProjectiles": 40,
+          "manifolds": 3
+        },
+        "failures": [
+          "设置订阅数: 3 ≠ 基线 2",
+          "DOM 监听总数: 91 ≠ 基线 89",
+          "document 监听: 13 ≠ 基线 12",
+          "canvas 监听: 9 ≠ 基线 8"
+        ]
+      },
+      {
+        "index": 2,
+        "counts": {
+          "canvasCount": 1,
+          "liveGames": 1,
+          "displayObjects": 661,
+          "physicsBodies": 1,
+          "tweens": 16,
+          "timers": 0,
+          "activeScenes": 1,
+          "settingsSubscribers": 4,
+          "inputListeners": {
+            "keydown": 1,
+            "keyup": 1,
+            "gameBlur": 4,
+            "sceneShutdown": 15
+          },
+          "domListeners": {
+            "total": 93,
+            "window": 5,
+            "document": 14,
+            "canvas": 10,
+            "other": 64
+          },
+          "aliveEnemies": 80,
+          "enemyProjectiles": 40,
+          "manifolds": 3
+        },
+        "failures": [
+          "设置订阅数: 4 ≠ 基线 2",
+          "DOM 监听总数: 93 ≠ 基线 89",
+          "document 监听: 14 ≠ 基线 12",
+          "canvas 监听: 10 ≠ 基线 8"
+        ]
+      },
+      {
+        "index": 3,
+        "counts": {
+          "canvasCount": 1,
+          "liveGames": 1,
+          "displayObjects": 661,
+          "physicsBodies": 1,
+          "tweens": 16,
+          "timers": 0,
+          "activeScenes": 1,
+          "settingsSubscribers": 5,
+          "inputListeners": {
+            "keydown": 1,
+            "keyup": 1,
+            "gameBlur": 4,
+            "sceneShutdown": 15
+          },
+          "domListeners": {
+            "total": 95,
+            "window": 5,
+            "document": 15,
+            "canvas": 11,
+            "other": 64
+          },
+          "aliveEnemies": 80,
+          "enemyProjectiles": 40,
+          "manifolds": 3
+        },
+        "failures": [
+          "设置订阅数: 5 ≠ 基线 2",
+          "DOM 监听总数: 95 ≠ 基线 89",
+          "document 监听: 15 ≠ 基线 12",
+          "canvas 监听: 11 ≠ 基线 8"
+        ]
+      },
+      {
+        "index": 4,
+        "counts": {
+          "canvasCount": 1,
+          "liveGames": 1,
+          "displayObjects": 661,
+          "physicsBodies": 1,
+          "tweens": 16,
+          "timers": 3,
+          "activeScenes": 1,
+          "settingsSubscribers": 6,
+          "inputListeners": {
+            "keydown": 1,
+            "keyup": 1,
+            "gameBlur": 4,
+            "sceneShutdown": 15
+          },
+          "domListeners": {
+            "total": 97,
+            "window": 5,
+            "document": 16,
+            "canvas": 12,
+            "other": 64
+          },
+          "aliveEnemies": 80,
+          "enemyProjectiles": 40,
+          "manifolds": 3
+        },
+        "failures": [
+          "设置订阅数: 6 ≠ 基线 2",
+          "DOM 监听总数: 97 ≠ 基线 89",
+          "document 监听: 16 ≠ 基线 12",
+          "canvas 监听: 12 ≠ 基线 8"
+        ]
+      },
+      {
+        "index": 5,
+        "counts": {
+          "canvasCount": 1,
+          "liveGames": 1,
+          "displayObjects": 661,
+          "physicsBodies": 1,
+          "tweens": 16,
+          "timers": 3,
+          "activeScenes": 1,
+          "settingsSubscribers": 7,
+          "inputListeners": {
+            "keydown": 1,
+            "keyup": 1,
+            "gameBlur": 4,
+            "sceneShutdown": 15
+          },
+          "domListeners": {
+            "total": 99,
+            "window": 5,
+            "document": 17,
+            "canvas": 13,
+            "other": 64
+          },
+          "aliveEnemies": 80,
+          "enemyProjectiles": 40,
+          "manifolds": 3
+        },
+        "failures": [
+          "设置订阅数: 7 ≠ 基线 2",
+          "DOM 监听总数: 99 ≠ 基线 89",
+          "document 监听: 17 ≠ 基线 12",
+          "canvas 监听: 13 ≠ 基线 8"
+        ]
+      }
+    ],
+    "pass": false
+  },
+  "pass": false
+}

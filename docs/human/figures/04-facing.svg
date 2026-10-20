@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img"><title>八向移动与面向施法示意</title>
+<rect x="0" y="0" width="1000" height="360" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<line x1="260.0" y1="185.0" x2="350.0" y2="185.0" stroke="#DF9D38" stroke-width="3"/>
+<polygon points="350.0,185.0 339.1946347717679,190.21958640933477 339.1946347717679,179.78041359066523" fill="#DF9D38"/>
+<line x1="248.2842712474619" y1="213.2842712474619" x2="311.9238815542512" y2="276.9238815542512" stroke="#087F8C" stroke-width="3"/>
+<polygon points="311.9238815542512,276.9238815542512 300.5925295831412,272.9741394732007 307.9741394732007,265.5925295831412" fill="#087F8C"/>
+<line x1="220.0" y1="225.0" x2="220.0" y2="315.0" stroke="#087F8C" stroke-width="3"/>
+<polygon points="220.0,315.0 214.78041359066523,304.1946347717679 225.21958640933477,304.1946347717679" fill="#087F8C"/>
+<line x1="191.7157287525381" y1="213.2842712474619" x2="128.07611844574882" y2="276.9238815542512" stroke="#087F8C" stroke-width="3"/>
+<polygon points="128.07611844574882,276.9238815542512 132.02586052679933,265.5925295831412 139.40747041685884,272.9741394732007" fill="#087F8C"/>
+<line x1="180.0" y1="185.0" x2="90.0" y2="185.00000000000003" stroke="#087F8C" stroke-width="3"/>
+<polygon points="90.0,185.00000000000003 100.80536522823212,179.78041359066526 100.80536522823212,190.2195864093348" fill="#087F8C"/>
+<line x1="191.7157287525381" y1="156.7157287525381" x2="128.07611844574882" y2="93.07611844574883" stroke="#087F8C" stroke-width="3"/>
+<polygon points="128.07611844574882,93.07611844574883 139.40747041685884,97.02586052679933 132.02586052679933,104.40747041685884" fill="#087F8C"/>
+<line x1="220.0" y1="145.0" x2="219.99999999999997" y2="55.0" stroke="#087F8C" stroke-width="3"/>
+<polygon points="219.99999999999997,55.0 225.21958640933474,65.80536522823212 214.7804135906652,65.80536522823212" fill="#087F8C"/>
+<line x1="248.2842712474619" y1="156.7157287525381" x2="311.9238815542511" y2="93.0761184457488" stroke="#087F8C" stroke-width="3"/>
+<polygon points="311.9238815542511,93.0761184457488 307.97413947320064,104.40747041685881 300.59252958314113,97.02586052679932" fill="#087F8C"/>
+<circle cx="220" cy="185" r="30" fill="#172B36" stroke="none" stroke-width="1"/>
+<text x="220" y="193" font-family="STHeiti, PingFang SC, sans-serif" font-size="23" fill="#FFFFFF" text-anchor="middle">你</text>
+<rect x="430" y="32" width="535" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="430" y="32" width="6" height="85" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="450" y="74" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">移动决定面向</text>
+<text x="450" y="110" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">松开按键，保留最后方向。</text>
+<rect x="430" y="135" width="535" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="430" y="135" width="6" height="85" rx="0" fill="#DF9D38" stroke="none" stroke-width="1"/>
+<text x="450" y="177" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">朝哪边，向哪边释放</text>
+<text x="450" y="213" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">已飞出的弹体不会跟着你转弯。</text>
+<rect x="430" y="238" width="535" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="430" y="238" width="6" height="85" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="450" y="280" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">Tab 不替你瞄准</text>
+<text x="450" y="316" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">只切换前方提示目标，不改变面向。</text>
+</svg>

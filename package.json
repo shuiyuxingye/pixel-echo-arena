@@ -1,0 +1,36 @@
+{
+  "name": "pixel-echo-arena",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "像素回响：泰拉试炼 — 单人俯视角像素动作肉鸽",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:share": "npm run build && node tools/release/build-share.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "perf": "node tools/perf/perf-check.mjs",
+    "assets": "node tools/generate-assets.mjs"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "daisyui": "^5.7.50",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "jsdom": "^30.1.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

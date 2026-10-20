@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="night">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d0b12" />
+    <meta
+      name="description"
+      content="像素回响：泰拉试炼 — 单人俯视角像素动作肉鸽。四名干员，九波敌潮，一座废弃实验场。"
+    />
+    <title>像素回响：泰拉试炼</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="game-root" aria-hidden="true"></div>
+
+      <div id="menu-overlay" class="menu-overlay">
+        <div class="menu-backdrop-grid" aria-hidden="true"></div>
+        <div class="menu-scanlines" aria-hidden="true"></div>
+
+        <main class="menu-panel" aria-labelledby="game-title">
+          <p class="menu-kicker">ROGUELITE · PIXEL ARENA</p>
+          <h1 id="game-title" class="menu-title">像素回响</h1>
+          <p class="menu-subtitle">泰拉试炼</p>
+          <p class="menu-description">
+            四名干员，九波敌潮，一座废弃实验场。<br />
+            走位、闪避，然后活下来。
+          </p>
+          <p class="menu-controls">WASD 移动 · J 普攻 · K / L 技能 · Space 闪避</p>
+          <div class="menu-actions">
+            <button
+              id="continue-button"
+              type="button"
+              class="btn btn-primary btn-lg menu-start"
+              hidden
+            >
+              <span class="menu-start-key">继续</span>
+              继续试炼
+            </button>
+            <button
+              id="start-button"
+              type="button"
+              class="btn btn-primary btn-lg menu-start"
+              autofocus
+            >
+              <span class="menu-start-key">Enter</span>
+              开始试炼
+            </button>
+            <button id="help-button" type="button" class="btn menu-secondary">
+              帮助
+            </button>
+            <button id="settings-button" type="button" class="btn menu-secondary">
+              设置
+            </button>
+            <button id="reset-save-button" type="button" class="btn menu-secondary" hidden>
+              清除损坏存档
+            </button>
+          </div>
+          <p id="save-notice" class="menu-save-notice" role="status" hidden></p>
+          <p class="menu-footnote">W/S 或方向键选择 · Enter 确认</p>
+        </main>
+      </div>
+
+      <div
+        id="character-select-overlay"
+        class="character-select-overlay"
+        hidden
+        aria-hidden="true"
+      >
+        <div class="menu-backdrop-grid" aria-hidden="true"></div>
+        <div class="menu-scanlines" aria-hidden="true"></div>
+
+        <section class="character-select-panel" aria-labelledby="character-select-title">
+          <header class="character-select-header">
+            <p class="menu-kicker">SELECT OPERATOR</p>
+            <h2 id="character-select-title" class="character-select-title">选择干员</h2>
+            <p class="character-select-hint">
+              WASD / 方向键 移动焦点 · Enter 确认 · Esc 返回主菜单
+            </p>
+          </header>
+          <div
+            id="character-select-list"
+            class="character-select-list"
+            role="radiogroup"
+            aria-labelledby="character-select-title"
+          ></div>
+          <p class="character-select-footnote">选中角色带入战斗，局中不可更换</p>
+        </section>
+      </div>
+
+      <div id="help-overlay" class="game-overlay" hidden aria-hidden="true">
+        <section
+          id="help-panel"
+          class="game-panel help-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="help-title"
+        >
+          <p class="menu-kicker">FIELD MANUAL</p>
+          <h2 id="help-title" class="game-panel-title">帮助</h2>
+          <div id="help-content" class="help-content"></div>
+          <button id="help-back-button" type="button" class="btn game-back">
+            返回（Enter / Esc）
+          </button>
+        </section>
+      </div>
+
+      <div id="settings-overlay" class="game-overlay" hidden aria-hidden="true">
+        <section
+          id="settings-panel"
+          class="game-panel settings-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+        >
+          <p class="menu-kicker">CONFIGURATION</p>
+          <h2 id="settings-title" class="game-panel-title">设置</h2>
+          <p id="settings-hint" class="game-panel-hint">
+            方向键或 W/S 移动焦点 · Enter 激活 · Esc 返回
+          </p>
+          <div id="settings-list" class="settings-list" role="menu"></div>
+          <p id="settings-message" class="settings-message" role="status"></p>
+        </section>
+      </div>
+
+      <div id="result-overlay" class="game-overlay result-overlay" hidden aria-hidden="true">
+        <section
+          id="result-panel"
+          class="game-panel result-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="result-title"
+        >
+          <p class="menu-kicker">RUN REPORT</p>
+          <h2 id="result-title" class="game-panel-title">结算</h2>
+          <p id="result-subtitle" class="result-subtitle"></p>
+          <dl id="result-stats" class="result-stats"></dl>
+          <div class="result-build">
+            <h3 class="result-section-title">最终构筑</h3>
+            <p id="result-build" class="result-build-text"></p>
+          </div>
+          <div id="result-menu" class="pause-menu result-menu">
+            <button id="result-restart" type="button" class="btn game-menu-button is-focused">
+              同角色重开
+            </button>
+            <button id="result-select" type="button" class="btn game-menu-button">
+              返回选角
+            </button>
+            <button id="result-records" type="button" class="btn game-menu-button">
+              查看记录
+            </button>
+          </div>
+          <div id="result-records-view" class="result-records-view" hidden>
+            <h3 class="result-section-title">最近 10 局</h3>
+            <ol id="result-record-list" class="result-record-list"></ol>
+            <button id="result-records-back" type="button" class="btn game-back">
+              返回（Enter / Esc）
+            </button>
+          </div>
+          <p id="result-hint" class="game-panel-hint">W/S 或方向键选择 · Enter 确认</p>
+        </section>
+      </div>
+
+      <div id="pause-overlay" class="game-overlay pause-overlay" hidden aria-hidden="true">
+        <section
+          id="pause-panel"
+          class="game-panel pause-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pause-title"
+        >
+          <p class="menu-kicker">TACTICAL PAUSE</p>
+          <h2 id="pause-title" class="game-panel-title">已暂停</h2>
+          <p id="pause-reason" class="pause-reason">按 Esc 或 Enter 继续</p>
+          <div id="pause-menu" class="pause-menu">
+            <button id="pause-continue" type="button" class="btn game-menu-button is-focused">
+              继续游戏
+            </button>
+            <button id="pause-help" type="button" class="btn game-menu-button">
+              帮助
+            </button>
+            <button id="pause-settings" type="button" class="btn game-menu-button">
+              设置
+            </button>
+            <button id="pause-return" type="button" class="btn game-menu-button">
+              返回选角
+            </button>
+          </div>
+          <p class="game-panel-hint">暂停期间敌人、弹体、冷却与波次计时全部冻结</p>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

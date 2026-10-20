@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="310" viewBox="0 0 1000 310" role="img"><title>三选一强化与构筑示意</title>
+<rect x="0" y="0" width="1000" height="310" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<rect x="25" y="25" width="300" height="205" rx="12" fill="#FFFFFF" stroke="#087F8C" stroke-width="3"/>
+<text x="50" y="68" font-family="STHeiti, PingFang SC, sans-serif" font-size="32" fill="#087F8C" text-anchor="start">1</text>
+<text x="50" y="112" font-family="STHeiti, PingFang SC, sans-serif" font-size="30" fill="#172B36" text-anchor="start">强袭</text>
+<text x="50" y="153" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#087F8C" text-anchor="start">通用 · 银</text>
+<text x="50" y="192" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="start">直接提高输出</text>
+<rect x="350" y="25" width="300" height="205" rx="12" fill="#FFFFFF" stroke="#DF9D38" stroke-width="3"/>
+<text x="375" y="68" font-family="STHeiti, PingFang SC, sans-serif" font-size="32" fill="#DF9D38" text-anchor="start">2</text>
+<text x="375" y="112" font-family="STHeiti, PingFang SC, sans-serif" font-size="30" fill="#172B36" text-anchor="start">二次余震</text>
+<text x="375" y="153" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#DF9D38" text-anchor="start">维什戴尔 · 金</text>
+<text x="375" y="192" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="start">改变榴弹节奏</text>
+<rect x="675" y="25" width="300" height="205" rx="12" fill="#FFFFFF" stroke="#8E6BB0" stroke-width="3"/>
+<text x="700" y="68" font-family="STHeiti, PingFang SC, sans-serif" font-size="32" fill="#8E6BB0" text-anchor="start">3</text>
+<text x="700" y="112" font-family="STHeiti, PingFang SC, sans-serif" font-size="30" fill="#172B36" text-anchor="start">标记传染</text>
+<text x="700" y="153" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#8E6BB0" text-anchor="start">维什戴尔 · 棱彩</text>
+<text x="700" y="192" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="start">扩大标记覆盖</text>
+<text x="500" y="279" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="middle">1 / 2 / 3 只移动焦点；Enter 确认；R 重抽（每局默认 2 次）。</text>
+</svg>

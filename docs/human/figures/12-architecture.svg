@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="390" viewBox="0 0 1000 390" role="img"><title>接手项目时的三层结构</title>
+<rect x="0" y="0" width="1000" height="390" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<rect x="35" y="35" width="930" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="35" y="35" width="6" height="85" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="55" y="77" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">界面与场景</text>
+<text x="55" y="113" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">src/ui/ + ArenaScene.ts：菜单、键盘、战场、HUD</text>
+<line x1="500" y1="126" x2="500" y2="153" stroke="#087F8C" stroke-width="3"/>
+<polygon points="500,153 494.78041359066526,142.19463477176788 505.21958640933474,142.19463477176788" fill="#087F8C"/>
+<rect x="35" y="160" width="930" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="35" y="160" width="6" height="85" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="55" y="202" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">玩法规则与配置</text>
+<text x="55" y="238" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">src/game/：战斗、波次、强化、存档；data/：角色与数值</text>
+<line x1="500" y1="251" x2="500" y2="278" stroke="#087F8C" stroke-width="3"/>
+<polygon points="500,278 494.78041359066526,267.1946347717679 505.21958640933474,267.1946347717679" fill="#087F8C"/>
+<rect x="35" y="285" width="930" height="85" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="35" y="285" width="6" height="85" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="55" y="327" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">构建与交付</text>
+<text x="55" y="363" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">Vite → dist/；build:share → 单文件 HTML；MD + SVG → PDF</text>
+</svg>

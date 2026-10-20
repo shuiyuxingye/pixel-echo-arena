@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="260" viewBox="0 0 1000 260" role="img"><title>从打开游戏到通关的流程</title>
+<rect x="0" y="0" width="1000" height="260" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<rect x="24" y="55" width="220" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="24" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="44" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">打开 HTML</text>
+<text x="44" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">不需服务器</text>
+<line x1="246" y1="110" x2="266" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="266,110 255.19463477176788,115.21958640933477 255.19463477176788,104.78041359066523" fill="#087F8C"/>
+<rect x="270" y="55" width="220" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="270" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="290" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">选择角色</text>
+<text x="290" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">四人任选</text>
+<line x1="492" y1="110" x2="512" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="512,110 501.1946347717679,115.21958640933477 501.1946347717679,104.78041359066523" fill="#087F8C"/>
+<rect x="516" y="55" width="220" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="516" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="536" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">战斗升级</text>
+<text x="536" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">三选一强化</text>
+<line x1="738" y1="110" x2="758" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="758,110 747.1946347717678,115.21958640933477 747.1946347717678,104.78041359066523" fill="#087F8C"/>
+<rect x="762" y="55" width="220" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="762" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="782" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">第 9 波</text>
+<text x="782" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">挑战 Boss</text>
+<text x="500" y="222" font-family="STHeiti, PingFang SC, sans-serif" font-size="23" fill="#51636C" text-anchor="middle">失败也会结算；同角色重开或返回选角，下一局重新构筑。</text>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="310" viewBox="0 0 1000 310" role="img"><title>分享包的最小运行依赖</title>
+<rect x="0" y="0" width="1000" height="310" rx="12" fill="#F2F6F6" stroke="none" stroke-width="1"/>
+<rect x="35" y="55" width="290" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="35" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="55" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">轻量游戏包 ZIP</text>
+<text x="55" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">下载后先解压</text>
+<line x1="335" y1="110" x2="405" y2="110" stroke="#087F8C" stroke-width="3"/>
+<polygon points="405,110 394.1946347717679,115.21958640933477 394.1946347717679,104.78041359066523" fill="#087F8C"/>
+<rect x="415" y="55" width="550" height="110" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
+<rect x="415" y="55" width="6" height="110" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
+<text x="435" y="97" font-family="STHeiti, PingFang SC, sans-serif" font-size="25" fill="#172B36" text-anchor="start">像素回响.html + 快速说明</text>
+<text x="435" y="133" font-family="STHeiti, PingFang SC, sans-serif" font-size="19" fill="#51636C" text-anchor="start">双击 HTML，交给浏览器运行</text>
+<text x="500" y="225" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="middle">不携带 node_modules、源代码、AI 日志、个人配置或存档。</text>
+<text x="500" y="269" font-family="STHeiti, PingFang SC, sans-serif" font-size="23" fill="#087F8C" text-anchor="middle">只想玩：不需要终端，也不需要安装 Claude。</text>
+</svg>
