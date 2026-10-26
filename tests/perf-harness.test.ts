@@ -168,10 +168,10 @@ describe('Phaser 监听清理', () => {
 describe('性能场景接线', () => {
   it('parseDevScenario 保留 perf 标记与常规场景互不干扰', () => {
     expect(parseDevScenario('?dev=1&perf=1')?.perf).toBe(true);
-    expect(parseDevScenario('?dev=1&enemies=chaser:2')?.perf).toBe(false);
+    expect(parseDevScenario('?dev=1&enemies=blob:2')?.perf).toBe(false);
     expect(parseDevScenario('?perf=1')).toBeNull();
     expect(
-      parseDevScenario(`?dev=1&perf=1&enemies=chaser:${DEV_SCENARIO_MAX_ENEMIES}`)?.perf,
+      parseDevScenario(`?dev=1&perf=1&enemies=blob:${DEV_SCENARIO_MAX_ENEMIES}`)?.perf,
     ).toBe(true);
   });
 
@@ -248,7 +248,7 @@ describe('交付材料', () => {
   it('素材来源说明与 README 标明本地生成、无外链运行时素材', () => {
     expect(ASSET_SOURCES).toContain('tools/generate-assets.mjs');
     expect(ASSET_SOURCES).toContain('public/assets/');
-    expect(ASSET_SOURCES).toContain('64×64');
+    expect(ASSET_SOURCES).toContain('96×96');
     expect(README).toContain('npm run build');
     expect(README).toContain('docs/演示流程脚本.md');
     expect(README).toContain('npm run test');

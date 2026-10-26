@@ -106,7 +106,7 @@ describe('G02 轻装', () => {
 });
 
 describe('G03 蓄能', () => {
-  it('每层 +8% K/L 冷却缩减，且总缩减不超过 40%', () => {
+  it('每层 +8% K/L 冷却缩减，且总缩减不超过 50%', () => {
     expect(effectsWith({ G03: 1 }).cooldownReduction).toBeCloseTo(
       G03_COOLDOWN_REDUCTION_PER_STACK,
       10,
@@ -118,10 +118,10 @@ describe('G03 蓄能', () => {
     expect(effects.cooldownReduction).toBeCloseTo(0.24, 10);
     expect(effects.effectiveCooldown(30)).toBeCloseTo(22.8, 10);
 
-    // 即使层数异常高于卡面上限，百分比冷却缩减仍被 40% 上限截断。
+    // 即使层数异常高于卡面上限，百分比冷却缩减仍被 50% 上限截断。
     const capped = effectsWith({ G03: 10 });
     expect(capped.cooldownReduction).toBe(COOLDOWN_REDUCTION_CAP);
-    expect(capped.cooldownMultiplier).toBeCloseTo(0.6, 10);
+    expect(capped.cooldownMultiplier).toBeCloseTo(0.5, 10);
   });
 
   it('魂灵与爆裂黎明的启动冷却按 G03 倍率缩短', () => {
@@ -301,7 +301,7 @@ describe('G08 极限回转', () => {
     expect(effects.killProgress).toEqual({ k: 0, l: 0 });
   });
 
-  it('G03 百分比与 G08 返还合计不超过 40% 冷却缩减', () => {
+  it('G03 百分比与 G08 返还合计不超过 50% 冷却缩减', () => {
     const effects = effectsWith({ G03: 3, G08: 1 });
     const base = 30;
     const floor = effects.cooldownFloor(base);
@@ -330,7 +330,7 @@ describe('构筑面板效果摘要', () => {
     expect(describeUpgradeEffect('G01', 2)).toBe('伤害 +24%');
     expect(describeUpgradeEffect('G02', 3)).toBe('移速 +24%');
     expect(describeUpgradeEffect('G03', 3)).toBe('K/L 冷却 -24%');
-    expect(describeUpgradeEffect('G03', 10)).toBe('K/L 冷却 -40%');
+    expect(describeUpgradeEffect('G03', 10)).toBe('K/L 冷却 -50%');
     expect(describeUpgradeEffect('G04', 3)).toBe('最大生命 +60');
     expect(describeUpgradeEffect('G05', 1)).toContain('50/12');
     expect(describeUpgradeEffect('G06', 1)).toContain('5s');

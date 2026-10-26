@@ -41,7 +41,7 @@ afterEach(() => {
 describe('project shell smoke test', () => {
   it('ships an HTML entry with the title and a keyboard start control', () => {
     const html = readIndexHtml();
-    expect(html).toContain('<title>像素回响：泰拉试炼</title>');
+    expect(html).toContain('<title>像素回响：四人试炼</title>');
     expect(html).toContain('id="game-root"');
     expect(html).toContain('id="menu-overlay"');
     expect(html).toContain('id="start-button"');
@@ -49,10 +49,10 @@ describe('project shell smoke test', () => {
   });
 
   it('loads local pixel assets with the designed dimensions', () => {
-    expect(ASSET_PATHS.playerVishdal).toBe('/assets/sprites/player-vishdal.png');
-    expect(ASSET_PATHS.playerAmiya).toBe('/assets/sprites/player-amiya.png');
-    expect(ASSET_PATHS.playerSaria).toBe('/assets/sprites/player-saria.png');
-    expect(ASSET_PATHS.playerMuelsyse).toBe('/assets/sprites/player-muelsyse.png');
+    expect(ASSET_PATHS.playerVishdal).toBe('/assets/art/hero-vishdal.png');
+    expect(ASSET_PATHS.playerAmiya).toBe('/assets/art/hero-amiya.png');
+    expect(ASSET_PATHS.playerSaria).toBe('/assets/art/hero-saria.png');
+    expect(ASSET_PATHS.playerMuelsyse).toBe('/assets/art/hero-muelsyse.png');
 
     for (const path of Object.values(ASSET_PATHS)) {
       expect(path.startsWith('/assets/')).toBe(true);
@@ -64,14 +64,10 @@ describe('project shell smoke test', () => {
       width: ARENA.width,
       height: ARENA.height,
     });
-    for (const path of [
-      ASSET_PATHS.playerVishdal,
-      ASSET_PATHS.playerAmiya,
-      ASSET_PATHS.playerSaria,
-      ASSET_PATHS.playerMuelsyse,
-    ]) {
-      expect(readPngSize(path)).toMatchObject({ width: 512, height: 320 });
-    }
+    expect(readPngSize(ASSET_PATHS.playerVishdal)).toMatchObject({ width: 864, height: 480 });
+    expect(readPngSize(ASSET_PATHS.playerAmiya)).toMatchObject({ width: 864, height: 480 });
+    expect(readPngSize(ASSET_PATHS.playerSaria)).toMatchObject({ width: 864, height: 480 });
+    expect(readPngSize(ASSET_PATHS.playerMuelsyse)).toMatchObject({ width: 864, height: 480 });
     expect(readPngSize(ASSET_PATHS.wall)).toMatchObject({ width: 32, height: 32 });
     expect(readPngSize(ASSET_PATHS.cover)).toMatchObject({ width: 32, height: 32 });
     expect(Object.keys(ASSET_KEYS)).toHaveLength(7);

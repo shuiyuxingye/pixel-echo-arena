@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createArenaLayout, isCircleBlocked } from '../src/game/arena';
+import { HealthState } from '../src/game/combat';
 import { PLAYER } from '../src/game/config';
+import { CoreEffects, E03_INVULNERABLE_SECONDS } from '../src/game/core-effects';
 import { getCharacter } from '../src/game/data';
 import { DODGE, PlayerMotion } from '../src/game/movement';
 import type { MoveVector } from '../src/game/movement';
@@ -197,6 +199,43 @@ describe('闪避', () => {
     expect(motion.requestDodge()).toBe(true);
   });
 
+  it('E07 低血倍率把新闪避冷却缩短 25%，恢复后回到 3 秒', () => {
+    const motion = createMotion();
+    motion.setDodgeCooldownMultiplier(0.75);
+    expect(motion.requestDodge()).toBe(true);
+    expect(motion.dodgeCooldownRemaining).toBeCloseTo(
+      DODGE.cooldownSeconds * 0.75,
+      9,
+    );
+
+    motion.resetDodgeForWaveStart();
+    motion.setDodgeCooldownMultiplier(1);
+    expect(motion.requestDodge()).toBe(true);
+    expect(motion.dodgeCooldownRemaining).toBeCloseTo(DODGE.cooldownSeconds, 9);
+  });
+
+  it('非法闪避冷却倍率按 1 处理', () => {
+    const motion = createMotion();
+    motion.setDodgeCooldownMultiplier(Number.NaN);
+    expect(motion.requestDodge()).toBe(true);
+    expect(motion.dodgeCooldownRemaining).toBeCloseTo(DODGE.cooldownSeconds, 9);
+  });
+
+  it('进入下一波取消进行中的闪避并清空冷却', () => {
+    const motion = createMotion();
+    expect(motion.requestDodge()).toBe(true);
+    motion.step(STEP);
+    expect(motion.isDodging).toBe(true);
+    expect(motion.isInvulnerable).toBe(true);
+    expect(motion.dodgeCooldownRemaining).toBeGreaterThan(0);
+
+    motion.resetDodgeForWaveStart();
+    expect(motion.isDodging).toBe(false);
+    expect(motion.isInvulnerable).toBe(false);
+    expect(motion.dodgeCooldownRemaining).toBe(0);
+    expect(motion.requestDodge()).toBe(true);
+  });
+
   it('闪避撞墙时停在墙边，不会穿墙', () => {
     const motion = createMotion(layout.wallThickness + PLAYER.radius, layout.spawn.y);
     motion.pressKey('KeyA');
@@ -232,6 +271,80 @@ describe('闪避', () => {
     expect(motion.isInvulnerable).toBe(false);
     expect(motion.position).toEqual(cancelled);
     expect(motion.dodgeCooldownRemaining).toBeGreaterThan(0);
+  });
+});
+
+describe('外部授予的无敌（E03 不屈圣印）', () => {
+  it('非闪避状态授予的 2 秒无敌会随逻辑步到期', () => {
+    const motion = createMotion();
+    motion.grantInvulnerability(E03_INVULNERABLE_SECONDS);
+    expect(motion.isInvulnerable).toBe(true);
+    expect(motion.isDodging).toBe(false);
+
+    advance(motion, E03_INVULNERABLE_SECONDS - 0.05);
+    expect(motion.isInvulnerable).toBe(true);
+
+    advance(motion, 0.1);
+    expect(motion.isInvulnerable).toBe(false);
+  });
+
+  it('移动或静止都不影响无敌计时', () => {
+    const moving = createMotion();
+    moving.pressKey('KeyD');
+    moving.grantInvulnerability(E03_INVULNERABLE_SECONDS);
+    advance(moving, E03_INVULNERABLE_SECONDS + 0.01);
+    expect(moving.isInvulnerable).toBe(false);
+
+    const idle = createMotion();
+    idle.grantInvulnerability(E03_INVULNERABLE_SECONDS);
+    advance(idle, E03_INVULNERABLE_SECONDS + 0.01);
+    expect(idle.isInvulnerable).toBe(false);
+  });
+
+  it('闪避不会把更长的保命无敌缩短为 0.15 秒', () => {
+    const motion = createMotion();
+    motion.grantInvulnerability(E03_INVULNERABLE_SECONDS);
+    expect(motion.requestDodge()).toBe(true);
+    expect(motion.isInvulnerable).toBe(true);
+
+    // 0.5 秒后闪避本体（0.18 秒）已结束，但 E03 的保命窗口仍在。
+    advance(motion, 0.5);
+    expect(motion.isDodging).toBe(false);
+    expect(motion.isInvulnerable).toBe(true);
+
+    advance(motion, E03_INVULNERABLE_SECONDS - 0.5 + 0.01);
+    expect(motion.isInvulnerable).toBe(false);
+  });
+
+  it('E03 触发后 2 秒内免伤，到期后同一波再次致命伤正常死亡', () => {
+    const effects = new CoreEffects({ hasCore: (id) => id === 'E03' });
+    const motion = createMotion();
+    const health = new HealthState({ maxHealth: 100 });
+
+    const fatal = health.applyDamage(1000, 'physical');
+    expect(fatal.died).toBe(true);
+    expect(effects.tryPreventDeath()).toBe(true);
+    health.restoreHealth(1, health.maxHealth);
+    motion.grantInvulnerability(E03_INVULNERABLE_SECONDS);
+    expect(health.health).toBe(1);
+
+    // 保命窗口内：与场景一致，无敌时伤害清零。
+    advance(motion, E03_INVULNERABLE_SECONDS - 0.1);
+    expect(motion.isInvulnerable).toBe(true);
+    const ignored = health.applyDamage(
+      motion.isInvulnerable ? 0 : 1000,
+      'physical',
+    );
+    expect(ignored.died).toBe(false);
+    expect(health.health).toBe(1);
+
+    // 窗口到期后：同一波第二次致命伤可以击杀，且 E03 不再保命。
+    advance(motion, 0.11);
+    expect(motion.isInvulnerable).toBe(false);
+    const second = health.applyDamage(1000, 'physical');
+    expect(second.died).toBe(true);
+    expect(effects.tryPreventDeath()).toBe(false);
+    expect(effects.e03UsedThisRun).toBe(1);
   });
 });
 

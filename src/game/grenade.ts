@@ -12,6 +12,16 @@
  * - W02 标记传染：残影引爆后给爆心周围最多 2 个未标记敌人附着残影，
  *   新标记不在本次爆炸中引爆，也不登记新余震。
  *
+ * V0.2 爆破手专属海克斯（`docs/design/v0.2/02-content-catalog.md`）：
+ * - H25 二次余震与 W01 效果相同，可传入自己的延迟/比例；
+ * - H26 残影传染与 W02 效果相同，可传入自己的扩散上限；
+ * - H30 烟花谢幕的波纹走 `applyRipple`：只算伤害，不登记爆炸次数、
+ *   不生成 I24/R02 小爆炸，也不引爆残影，因此不会递归。
+ *
+ * 三件成品（`docs/design/v0.2/02-content-catalog.md` §6 条三件合成）：
+ * - R02 连锁反应堆：爆炸击杀产生一次 50% 小爆炸；小爆炸本身不再产生小爆炸，
+ *   也不计入 I24 的“每第 N 次爆炸”，保证衍生链最多一层。
+ *
  * 时间按固定逻辑步长的秒数累计；位置为逻辑像素。
  */
 import { distanceSquared, type DamageResult } from './combat';
@@ -41,6 +51,8 @@ export interface GrenadeTarget {
   readonly x: number;
   readonly y: number;
   readonly isAlive: boolean;
+  /** 目标类别；宝箱可被伤害，但不参与标记扩散。 */
+  readonly kind?: 'enemy' | 'chest';
   applyDamage(rawDamage: number, damageType: DamageType): DamageResult;
 }
 
@@ -63,6 +75,14 @@ export interface ExplosionHit {
   readonly damage: DamageResult;
 }
 
+/** 一次额外的小爆炸（I24 裂变火药或 R02 爆炸击杀）；不参与递归。 */
+export interface ExplosionBlast {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly hits: readonly ExplosionHit[];
+}
+
 export interface GrenadeDetonation {
   readonly x: number;
   readonly y: number;
@@ -81,6 +101,10 @@ export interface GrenadeDetonation {
   readonly extraAftershockDelaySeconds: number | null;
   /** W01 追加余震的半径；未拥有 W01 时为 null。 */
   readonly extraAftershockRadius: number | null;
+  /** I24：本次爆炸若为每第 5 次，追加的小爆炸；否则为 null。 */
+  readonly fissionExplosion: ExplosionBlast | null;
+  /** R02：本次爆炸击杀的敌人各产生一次 50% 小爆炸；小爆炸不再递归。 */
+  readonly deathExplosions: readonly ExplosionBlast[];
 }
 
 export interface AfterimageExplosion {
@@ -92,6 +116,10 @@ export interface AfterimageExplosion {
   readonly hits: readonly ExplosionHit[];
   /** W02 本次引爆扩散到的新标记目标；未拥有 W02 时为空。 */
   readonly spreadTargetIds: readonly string[];
+  /** I24：本次爆炸若为每第 5 次，追加的小爆炸；否则为 null。 */
+  readonly fissionExplosion: ExplosionBlast | null;
+  /** R02：本次爆炸击杀的敌人各产生一次 50% 小爆炸；小爆炸不再递归。 */
+  readonly deathExplosions: readonly ExplosionBlast[];
 }
 
 export interface AftershockResolution {
@@ -102,6 +130,10 @@ export interface AftershockResolution {
   readonly hits: readonly ExplosionHit[];
   /** 由本次余震消耗残影触发的爆炸；每个带残影的被命中目标一次。 */
   readonly explosions: readonly AfterimageExplosion[];
+  /** I24：本次余震若为每第 5 次爆炸，追加的小爆炸；否则为 null。 */
+  readonly fissionExplosion: ExplosionBlast | null;
+  /** R02：本次余震击杀的敌人各产生一次 50% 小爆炸；小爆炸不再递归。 */
+  readonly deathExplosions: readonly ExplosionBlast[];
 }
 
 interface PendingAftershock {
@@ -136,9 +168,24 @@ export class GrenadeSystem {
   private elapsed = 0;
   /** G01 等全局伤害增益；直接、余震与残影引爆统一乘该倍率。 */
   private damageMultiplier = 1;
-  /** W01 是否追加第二次余震。 */
+  /** I13 爆炸半径倍率；作用于直接溅射、余震与残影引爆。 */
+  private explosionRadiusMultiplier = 1;
+  /** I13 爆炸伤害倍率；只作用于爆炸伤害，与全局倍率相乘。 */
+  private explosionDamageMultiplier = 1;
+  /** I24 每 N 次爆炸追加一次小爆炸；0 表示关闭。 */
+  private fissionEvery = 0;
+  /** I24 小爆炸的伤害比例。 */
+  private fissionDamagePercent = 0;
+  /** R02 爆炸击杀小爆炸的伤害比例；0 表示关闭。 */
+  private deathExplosionRatio = 0;
+  /** 本局已结算的爆炸次数（不含小爆炸本身，避免递归）。 */
+  private explosionCountValue = 0;
+  /** W01/H25 是否追加第二次余震。 */
   private secondAftershockEnabled = false;
-  /** W02 每次残影引爆最多扩散的标记数；0 表示关闭。 */
+  /** 追加余震的延迟与伤害比例；默认沿用 W01 数值。 */
+  private secondAftershockDelay = W01_EXTRA_AFTERSHOCK_DELAY_SECONDS;
+  private secondAftershockRatio = W01_EXTRA_AFTERSHOCK_DAMAGE_RATIO;
+  /** W02/H26 每次残影引爆最多扩散的标记数；0 表示关闭。 */
   private markSpreadTargets = 0;
 
   constructor(
@@ -164,23 +211,91 @@ export class GrenadeSystem {
     return this.pending.length;
   }
 
+  /**
+   * 波次超时清场：丢弃尚未结算的余震、残影标记与眩晕。
+   * 目标已被移除，这些临时状态不应带入下一波。
+   */
+  clearTemporaryEffects(): void {
+    this.pending = [];
+    this.marks.clear();
+    this.stunUntil.clear();
+  }
+
   /** 更新全局伤害倍率（G01 每层 +12%），立即作用于后续全部爆炸伤害。 */
   setDamageMultiplier(multiplier: number): void {
     this.damageMultiplier =
       Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   }
 
-  /** W01：每发榴弹额外登记一次 0.7 秒后、50% 直接伤害的余震。 */
-  setSecondAftershock(enabled: boolean): void {
-    this.secondAftershockEnabled = enabled;
+  /** I13：爆炸半径倍率与爆炸伤害倍率；非法值按不变处理。 */
+  setExplosionModifiers(radiusMultiplier: number, damageMultiplier: number): void {
+    this.explosionRadiusMultiplier =
+      Number.isFinite(radiusMultiplier) && radiusMultiplier > 0
+        ? radiusMultiplier
+        : 1;
+    this.explosionDamageMultiplier =
+      Number.isFinite(damageMultiplier) && damageMultiplier > 0
+        ? damageMultiplier
+        : 1;
   }
 
   /**
-   * W02：残影引爆后向爆心周围最多 N 个未标记敌人扩散标记。
+   * I24 裂变火药：每 `every` 次爆炸追加一次 `damagePercent` 伤害的小爆炸。
+   * `every` <= 0 或 `damagePercent` <= 0 表示关闭。
+   */
+  setFissionPowder(enabled: boolean, every: number, damagePercent: number): void {
+    this.fissionEvery =
+      enabled && Number.isInteger(every) && every > 0 ? every : 0;
+    this.fissionDamagePercent =
+      enabled &&
+      Number.isFinite(damagePercent) &&
+      damagePercent > 0
+        ? damagePercent
+        : 0;
+  }
+
+  /**
+   * R02 连锁反应堆：爆炸击杀时在目标位置追加一次 `ratio` 伤害的小爆炸。
+   * 小爆炸由 `deathExplosionsFor` 直接结算，不递归调用本入口。
+   */
+  setDeathExplosion(enabled: boolean, ratio: number): void {
+    this.deathExplosionRatio =
+      enabled && Number.isFinite(ratio) && ratio > 0 ? ratio : 0;
+  }
+
+  /** 本局已结算的爆炸次数；开发快照与测试用。 */
+  get explosionCount(): number {
+    return this.explosionCountValue;
+  }
+
+  /**
+   * W01/H25：每发榴弹额外登记一次追加余震。
+   * H25 与 W01 效果相同，重复拥有不会叠加；H25 可显式传入自己的数值。
+   */
+  setSecondAftershock(
+    enabled: boolean,
+    delaySeconds = W01_EXTRA_AFTERSHOCK_DELAY_SECONDS,
+    damageRatio = W01_EXTRA_AFTERSHOCK_DAMAGE_RATIO,
+  ): void {
+    this.secondAftershockEnabled = enabled;
+    this.secondAftershockDelay =
+      Number.isFinite(delaySeconds) && delaySeconds > 0
+        ? delaySeconds
+        : W01_EXTRA_AFTERSHOCK_DELAY_SECONDS;
+    this.secondAftershockRatio =
+      Number.isFinite(damageRatio) && damageRatio > 0
+        ? damageRatio
+        : W01_EXTRA_AFTERSHOCK_DAMAGE_RATIO;
+  }
+
+  /**
+   * W02/H26：残影引爆后向爆心周围最多 N 个未标记敌人扩散标记。
    * 只附着标记，不登记余震、不在本次爆炸中引爆新标记。
    */
-  setMarkSpread(enabled: boolean): void {
-    this.markSpreadTargets = enabled ? W02_SPREAD_TARGETS : 0;
+  setMarkSpread(enabled: boolean, spreadTargets = W02_SPREAD_TARGETS): void {
+    this.markSpreadTargets = enabled
+      ? Math.max(0, Math.floor(spreadTargets))
+      : 0;
   }
 
   get markedIds(): readonly string[] {
@@ -206,12 +321,17 @@ export class GrenadeSystem {
         damageType: entry.damageType,
         radius: entry.radius,
       })),
+      explosionCount: this.explosionCountValue,
     };
   }
 
   /** 从波中快照恢复：余震到期时间与眩晕按当前逻辑时钟换算。 */
   restoreWorld(state: GrenadeWorldSnapshot): void {
     this.elapsed = nonNegative(state.elapsedSeconds);
+    this.explosionCountValue =
+      Number.isInteger(state.explosionCount) && (state.explosionCount as number) > 0
+        ? (state.explosionCount as number)
+        : 0;
     this.marks.clear();
     for (const targetId of state.marks) this.marks.add(targetId);
     this.stunUntil.clear();
@@ -263,10 +383,13 @@ export class GrenadeSystem {
     targets: readonly GrenadeTarget[],
     attack?: AttackDefinition,
   ): GrenadeDetonation {
-    const splashRadius = attack?.splashRadius ?? this.directRadius;
+    const splashRadius = this.scaledRadius(
+      attack?.splashRadius ?? this.directRadius,
+    );
     const directDamage = attack?.damage ?? this.directDamage;
     const directDamageType = attack?.damageType ?? this.directDamageType;
     const aftershock = attack?.aftershock ?? this.aftershock;
+    const aftershockRadius = this.scaledRadius(aftershock.radius);
 
     const hits = this.damageWithin(
       impact,
@@ -284,7 +407,7 @@ export class GrenadeSystem {
         hits.push({
           targetId: primary.id,
           damage: primary.applyDamage(
-            directDamage * this.damageMultiplier,
+            this.scaledExplosionDamage(directDamage),
             directDamageType,
           ),
         });
@@ -301,24 +424,41 @@ export class GrenadeSystem {
       y: impact.y,
       damage: aftershock.damage,
       damageType: aftershock.damageType,
-      radius: aftershock.radius,
+      radius: aftershockRadius,
     });
 
-    // W01：每发榴弹多一次 0.7 秒后、直接伤害 50% 的余震；同样绑定命中坐标。
+    // W01/H25：每发榴弹多一次追加余震；同样绑定命中坐标。
     let extraAftershockDelaySeconds: number | null = null;
     let extraAftershockRadius: number | null = null;
     if (this.secondAftershockEnabled) {
       this.pending.push({
-        dueAt: this.elapsed + W01_EXTRA_AFTERSHOCK_DELAY_SECONDS,
+        dueAt: this.elapsed + this.secondAftershockDelay,
         x: impact.x,
         y: impact.y,
-        damage: directDamage * W01_EXTRA_AFTERSHOCK_DAMAGE_RATIO,
+        damage: directDamage * this.secondAftershockRatio,
         damageType: directDamageType,
-        radius: aftershock.radius,
+        radius: aftershockRadius,
       });
-      extraAftershockDelaySeconds = W01_EXTRA_AFTERSHOCK_DELAY_SECONDS;
-      extraAftershockRadius = aftershock.radius;
+      extraAftershockDelaySeconds = this.secondAftershockDelay;
+      extraAftershockRadius = aftershockRadius;
     }
+
+    // I24：直接爆炸本身也计入“每第 N 次爆炸”，小爆炸不参与计数。
+    const fissionExplosion = this.recordExplosion(
+      impact,
+      splashRadius,
+      directDamage,
+      directDamageType,
+      targets,
+    );
+    // R02：本次爆炸击杀的目标各产生一次 50% 小爆炸；小爆炸不再递归。
+    const deathExplosions = this.deathExplosionsFor(
+      hits,
+      targets,
+      splashRadius,
+      directDamage,
+      directDamageType,
+    );
 
     return {
       x: impact.x,
@@ -328,10 +468,28 @@ export class GrenadeSystem {
       primaryTargetId: primary?.id ?? null,
       markedTargetId,
       aftershockDelaySeconds: aftershock.delaySeconds,
-      aftershockRadius: aftershock.radius,
+      aftershockRadius,
       extraAftershockDelaySeconds,
       extraAftershockRadius,
+      fissionExplosion,
+      deathExplosions,
     };
+  }
+
+  /**
+   * H30 烟花谢幕：在指定半径内结算一次波纹伤害。
+   * `radius` 已经是最终半径（不再乘爆炸半径倍率）；本入口不登记爆炸次数、
+   * 不生成 I24/R02 小爆炸、也不触发残影引爆，因此波纹不能自我衍生。
+   */
+  applyRipple(
+    center: { readonly x: number; readonly y: number },
+    radius: number,
+    rawDamage: number,
+    damageType: DamageType,
+    targets: readonly GrenadeTarget[],
+  ): ExplosionHit[] {
+    if (!(radius > 0) || !(rawDamage > 0)) return [];
+    return this.damageWithin(center, radius, targets, rawDamage, damageType);
   }
 
   /**
@@ -365,6 +523,15 @@ export class GrenadeSystem {
       entry.damageType,
     );
 
+    // 余震本身是一次爆炸；I24 的小爆炸不参与计数，避免递归。
+    const fissionExplosion = this.recordExplosion(
+      entry,
+      entry.radius,
+      entry.damage,
+      entry.damageType,
+      targets,
+    );
+
     // 先收集本次余震命中的带标记者，再逐个引爆；引爆不消耗其他标记。
     const markedSources = hits
       .map((hit) => targets.find((target) => target.id === hit.targetId) ?? null)
@@ -373,9 +540,10 @@ export class GrenadeSystem {
     const explosions: AfterimageExplosion[] = [];
     for (const source of markedSources) {
       this.marks.delete(source.id);
+      const explosionRadius = this.scaledRadius(this.afterimage.radius);
       const explosionHits = this.damageWithin(
         source,
-        this.afterimage.radius,
+        explosionRadius,
         targets,
         this.afterimage.damage,
         this.afterimage.damageType,
@@ -392,10 +560,25 @@ export class GrenadeSystem {
         sourceTargetId: source.id,
         x: source.x,
         y: source.y,
-        radius: this.afterimage.radius,
+        radius: explosionRadius,
         stunSeconds: this.afterimage.stunSeconds,
         hits: explosionHits,
         spreadTargetIds,
+        fissionExplosion: this.recordExplosion(
+          source,
+          explosionRadius,
+          this.afterimage.damage,
+          this.afterimage.damageType,
+          targets,
+        ),
+        // R02：残影引爆击杀同样产生小爆炸；小爆炸不再递归。
+        deathExplosions: this.deathExplosionsFor(
+          explosionHits,
+          targets,
+          explosionRadius,
+          this.afterimage.damage,
+          this.afterimage.damageType,
+        ),
       });
     }
 
@@ -405,6 +588,15 @@ export class GrenadeSystem {
       radius: entry.radius,
       hits,
       explosions,
+      fissionExplosion,
+      // R02：余震击杀产生小爆炸；在残影引爆之后结算，保持既有引爆顺序。
+      deathExplosions: this.deathExplosionsFor(
+        hits,
+        targets,
+        entry.radius,
+        entry.damage,
+        entry.damageType,
+      ),
     };
   }
 
@@ -415,10 +607,12 @@ export class GrenadeSystem {
   private spreadMarks(source: GrenadeTarget, targets: readonly GrenadeTarget[]): string[] {
     if (this.markSpreadTargets <= 0) return [];
 
-    const maxDistanceSquared = this.afterimage.radius * this.afterimage.radius;
+    const maxDistance = this.scaledRadius(this.afterimage.radius);
+    const maxDistanceSquared = maxDistance * maxDistance;
     const candidates: Array<{ readonly target: GrenadeTarget; readonly distance: number }> = [];
     for (const target of targets) {
       if (!target.isAlive) continue;
+      if (target.kind === 'chest') continue;
       if (target.id === source.id) continue;
       if (this.marks.has(target.id)) continue;
       const distance = distanceSquared(source, target);
@@ -458,10 +652,86 @@ export class GrenadeSystem {
       if (this.lineOfSight && !this.lineOfSight(center, target)) continue;
       hits.push({
         targetId: target.id,
-        damage: target.applyDamage(rawDamage * this.damageMultiplier, damageType),
+        damage: target.applyDamage(this.scaledExplosionDamage(rawDamage), damageType),
       });
     }
     return hits;
+  }
+
+  /** I13：爆炸半径倍率；非法倍率已在 setter 归一。 */
+  private scaledRadius(radius: number): number {
+    return radius * this.explosionRadiusMultiplier;
+  }
+
+  /** 全局伤害 × I13 爆炸伤害倍率；只用于爆炸结算。 */
+  private scaledExplosionDamage(rawDamage: number): number {
+    return rawDamage * this.damageMultiplier * this.explosionDamageMultiplier;
+  }
+
+  /**
+   * R02：为本次爆炸击杀的每个敌人生成一次小爆炸。
+   * 小爆炸直接走 `damageWithin`，不调用 `recordExplosion`、也不再回调本方法，
+   * 因此既能产生连锁伤害，又不会递归生成更多小爆炸，也不污染 I24 计数。
+   * 宝箱不属于“敌人”，被爆炸打破时不产生小爆炸。
+   */
+  private deathExplosionsFor(
+    hits: readonly ExplosionHit[],
+    targets: readonly GrenadeTarget[],
+    radius: number,
+    baseDamage: number,
+    damageType: DamageType,
+  ): ExplosionBlast[] {
+    if (this.deathExplosionRatio <= 0) return [];
+
+    const blasts: ExplosionBlast[] = [];
+    for (const hit of hits) {
+      if (!hit.damage.died) continue;
+      const target = targets.find((entry) => entry.id === hit.targetId) ?? null;
+      if (!target || target.kind === 'chest') continue;
+      const deathHits = this.damageWithin(
+        { x: target.x, y: target.y },
+        radius,
+        targets,
+        baseDamage * this.deathExplosionRatio,
+        damageType,
+      );
+      blasts.push({
+        x: target.x,
+        y: target.y,
+        radius,
+        hits: deathHits,
+      });
+    }
+    return blasts;
+  }
+
+  /**
+   * 记录一次爆炸并判断是否触发 I24 小爆炸。
+   * 小爆炸本身不调用本方法，因此不会递归追加。
+   */
+  private recordExplosion(
+    center: { readonly x: number; readonly y: number },
+    radius: number,
+    baseDamage: number,
+    damageType: DamageType,
+    targets: readonly GrenadeTarget[],
+  ): ExplosionBlast | null {
+    this.explosionCountValue += 1;
+    if (
+      this.fissionEvery <= 0 ||
+      this.fissionDamagePercent <= 0 ||
+      this.explosionCountValue % this.fissionEvery !== 0
+    ) {
+      return null;
+    }
+    const hits = this.damageWithin(
+      center,
+      radius,
+      targets,
+      baseDamage * this.fissionDamagePercent,
+      damageType,
+    );
+    return { x: center.x, y: center.y, radius, hits };
   }
 }
 

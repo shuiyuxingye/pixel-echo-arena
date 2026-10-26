@@ -83,7 +83,7 @@ function damageTarget(id: string, x: number, y: number): GrenadeTarget & {
 function worldSnapshot(
   overrides: Partial<RunWorldSnapshot> = {},
 ): RunWorldSnapshot {
-  const chaser = scaleEnemyForWave(getEnemy('chaser'), 3);
+  const chaser = scaleEnemyForWave(getEnemy('blob'), 3);
   return {
     player: { x: 720, y: 480, facing: 'northWest', dodgeCooldownSeconds: 1.25 },
     attackCooldownSeconds: 0.3,
@@ -355,8 +355,8 @@ describe('波中实体与冷却还原', () => {
 
   it('敌人数量、位置、生命、状态、冷却与敌弹按快照还原', () => {
     const source = new EnemySystem({ layout: LAYOUT });
-    source.addEnemy(getEnemy('shooter'), 400, 480);
-    const chaser = source.addEnemy(getEnemy('chaser'), 600, 520);
+    source.addEnemy(getEnemy('spitter'), 400, 480);
+    const chaser = source.addEnemy(getEnemy('blob'), 600, 520);
     const target: EnemyPlayerTarget = {
       x: 750,
       y: 480,
@@ -369,7 +369,8 @@ describe('波中实体与冷却还原', () => {
         new HealthState({ maxHealth: 100 }).applyDamage(damage, damageType),
     };
     chaser.combatant.health.applyDamage(20, 'true');
-    for (let step = 0; step < 100; step += 1) source.step(STEP, context);
+    // 喷菇首发需等 1.6 秒攻击间隔 + 0.7 秒蓄力（约 138 步），推进 150 步留出余量。
+    for (let step = 0; step < 150; step += 1) source.step(STEP, context);
     expect(source.projectiles.length).toBeGreaterThan(0);
     const saved = source.snapshotWorld();
     expect(saved.units).toHaveLength(2);
@@ -377,7 +378,7 @@ describe('波中实体与冷却还原', () => {
     const restored = new EnemySystem({ layout: LAYOUT });
     restored.restoreWorld(saved);
     expect(restored.enemies).toHaveLength(2);
-    const restoredShooter = restored.enemies.find((unit) => unit.enemy.id === 'shooter');
+    const restoredShooter = restored.enemies.find((unit) => unit.enemy.id === 'spitter');
     expect(restoredShooter?.combatant.x).toBeCloseTo(saved.units[0]?.x ?? 0, 6);
     expect(restored.projectiles.length).toBe(saved.projectiles.length);
     expect(restored.projectiles[0]?.x).toBeCloseTo(saved.projectiles[0]?.x ?? 0, 6);
@@ -386,7 +387,7 @@ describe('波中实体与冷却还原', () => {
     );
     expect(restored.enemies[1]?.attackCooldown).toBe(saved.units[1]?.attackCooldown);
     // 新增敌人使用未占用的 id，避免与恢复单位冲突。
-    const added = restored.addEnemy(getEnemy('chaser'), 900, 480);
+    const added = restored.addEnemy(getEnemy('blob'), 900, 480);
     expect(saved.units.some((unit) => unit.id === added.id)).toBe(false);
   });
 

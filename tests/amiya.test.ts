@@ -55,10 +55,10 @@ function runBurst(
 describe('阿米娅基础数值', () => {
   it('使用已确认的生命、护甲、法抗与移速', () => {
     expect(AMIYA).toMatchObject({
-      maxHealth: 100,
+      maxHealth: 110,
       armor: 0,
       magicResist: 0.15,
-      moveSpeed: 165,
+      moveSpeed: 175,
       radius: 12,
     });
   });
@@ -469,6 +469,28 @@ describe('阿米娅奇美拉', () => {
     expect(fresh.kCooldownRemaining).toBe(0);
     expect(fresh.modifyAttack(AMIYA.attack)).toEqual(AMIYA.attack);
   });
+
+  it('进入下一波清空 K/L 冷却并结束爆发、奇美拉与虚弱', () => {
+    const combat = createAmiyaCombat();
+    combat.tryActivateL();
+    combat.tryActivateK();
+    for (let step = 0; step < 8 * 60; step += 1) combat.step(STEP, 'east');
+    expect(combat.kCooldownRemaining).toBeGreaterThan(0);
+    expect(combat.isWeaknessActive).toBe(true);
+    expect(combat.tryActivateK()).toBe(false);
+    expect(combat.tryActivateL()).toBe(false);
+
+    combat.resetForWaveStart();
+    expect(combat.kCooldownRemaining).toBe(0);
+    expect(combat.lCooldownRemaining).toBe(0);
+    expect(combat.isBurstActive).toBe(false);
+    expect(combat.isChimeraActive).toBe(false);
+    expect(combat.isWeaknessActive).toBe(false);
+    expect(combat.moveSpeedMultiplier).toBe(1);
+    // 下一波开始即可重新施放两个技能。
+    expect(combat.tryActivateK()).toBe(true);
+    expect(combat.tryActivateL()).toBe(true);
+  });
 });
 
 describe('阿米娅场景接入', () => {
@@ -494,5 +516,14 @@ describe('阿米娅场景接入', () => {
     expect(sceneSource).toContain('createPlayerAnimations(this.character.id)');
     expect(sceneSource).toContain('ASSET_KEYS.playerAmiya');
     expect(sceneSource).toContain('playerAnimationKey(initialDirection, \'idle\', this.character.id)');
+  });
+});
+
+describe('I15 技能持续时间倍率', () => {
+  it('只延长奇美拉持续时间', () => {
+    const combat = createAmiyaCombat();
+    const base = combat.chimeraDurationSeconds;
+    combat.setDurationMultiplier(1.5);
+    expect(combat.chimeraDurationSeconds).toBeCloseTo(base * 1.5, 12);
   });
 });

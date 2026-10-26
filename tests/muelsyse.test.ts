@@ -3,6 +3,12 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createArenaLayout, isCircleBlocked } from '../src/game/arena';
 import { Combatant, type DamageResult } from '../src/game/combat';
+import {
+  E04_PHANTOM_DAMAGE_RATIO,
+  E04_PHANTOM_DURATION_SECONDS,
+  E04_PHANTOM_INTERVAL_SECONDS,
+  E04_SUMMON_DAMAGE_BONUS,
+} from '../src/game/core-effects';
 import { getCharacter, getEnemy } from '../src/game/data';
 import { EnemySystem } from '../src/game/enemy';
 import {
@@ -95,12 +101,12 @@ function combatant(id: string, x: number, y: number, maxHealth = 1000): Combatan
 }
 
 describe('缪尔赛思基础数值与初始近战流形', () => {
-  it('生命 105、护甲 5、法抗 10%、移速 165，J 每 0.55 秒 18 法伤射程 250', () => {
+  it('生命 125、护甲 5、法抗 10%、移速 175，J 每 0.55 秒 18 法伤射程 250', () => {
     expect(MUELSYSE).toMatchObject({
-      maxHealth: 105,
+      maxHealth: 125,
       armor: 5,
       magicResist: 0.1,
-      moveSpeed: 165,
+      moveSpeed: 175,
       radius: 12,
     });
     expect(MUELSYSE.attack).toMatchObject({
@@ -355,7 +361,7 @@ describe('缪尔赛思与敌人接触', () => {
   it('更近的主流形会替代玩家承受追击敌人的接触伤害', () => {
     const layout = createArenaLayout();
     const enemies = new EnemySystem({ layout });
-    const chaser = enemies.addEnemy(getEnemy('chaser'), 610, 480);
+    const chaser = enemies.addEnemy(getEnemy('blob'), 610, 480);
     const summon = { x: 600, y: 480, radius: 12, isAlive: true };
     let summonDamage = 0;
 
@@ -645,6 +651,26 @@ describe('缪尔赛思 L 浅层非熵适应', () => {
     expect(combat.enemyRootRemaining('boss')).toBe(0);
     expect(combat.enemySlowMultiplier('boss')).toBe(0.5);
   });
+
+  it('进入下一波清空 K/L 冷却并结束浅层非熵适应，形态保留', () => {
+    const combat = createCombat();
+    const player = { x: 720, y: 480 };
+    expect(combat.tryActivateK(player)).not.toBeNull();
+    const form = combat.form;
+    expect(combat.tryActivateL().activated).toBe(true);
+    expect(combat.isShallowAdaptationActive).toBe(true);
+    expect(combat.kCooldownRemaining).toBeGreaterThan(0);
+    expect(combat.lCooldownRemaining).toBeGreaterThan(0);
+
+    combat.resetForWaveStart();
+    expect(combat.form).toBe(form);
+    expect(combat.kCooldownRemaining).toBe(0);
+    expect(combat.lCooldownRemaining).toBe(0);
+    expect(combat.isShallowAdaptationActive).toBe(false);
+    // 下一波开始即可重新切换形态与启动 L。
+    expect(combat.tryActivateK(player)).not.toBeNull();
+    expect(combat.tryActivateL().activated).toBe(true);
+  });
 });
 
 describe('缪尔赛思场景接入', () => {
@@ -671,5 +697,171 @@ describe('缪尔赛思场景接入', () => {
     expect(sceneSource).toContain('ASSET_PATHS.playerMuelsyse');
     expect(sceneSource).toContain("'muelsyse'");
     expect(sceneSource).toContain('getMuelsyseForm');
+  });
+});
+
+describe('E04 群落意志', () => {
+  it('获得后 8 秒复制幻影，4 秒后消失，循环复制且同时只有 1 个', () => {
+    const combat = createCombat();
+    combat.setCorePhantom(true);
+    const ctx = context({ x: 720, y: 480 }, []);
+
+    advance(combat, E04_PHANTOM_INTERVAL_SECONDS - 0.3, ctx);
+    expect(combat.corePhantom).toBeNull();
+
+    advance(combat, 0.4, ctx);
+    expect(combat.corePhantom).not.toBeNull();
+    const first = combat.corePhantom;
+    expect(first?.remainingSeconds).toBeLessThanOrEqual(
+      E04_PHANTOM_DURATION_SECONDS,
+    );
+
+    // 4 秒寿命结束后消失；再过 8 秒重新复制。
+    advance(combat, E04_PHANTOM_DURATION_SECONDS - 0.2, ctx);
+    expect(combat.corePhantom).not.toBeNull();
+    advance(combat, 0.3, ctx);
+    expect(combat.corePhantom).toBeNull();
+
+    // 下一次复制发生在首次生成后第 16 秒；生命周期仍为 4 秒。
+    advance(combat, 3.9, ctx);
+    expect(combat.corePhantom).not.toBeNull();
+    advance(combat, E04_PHANTOM_DURATION_SECONDS + 0.2, ctx);
+    expect(combat.corePhantom).toBeNull();
+  });
+
+  it('幻影伤害为主召唤物 30%，并叠加 E04 的 +20% 召唤物伤害', () => {
+    const combat = createCombat();
+    combat.setCoreSummonBonus(1 + E04_SUMMON_DAMAGE_BONUS);
+    combat.setCorePhantom(true);
+    const player = { x: 720, y: 480 };
+    advance(combat, E04_PHANTOM_INTERVAL_SECONDS, context(player, []));
+
+    const phantom = combat.corePhantom;
+    expect(phantom).not.toBeNull();
+    if (!phantom) return;
+
+    const target = combatant('phantom-target', phantom.x, phantom.y, 1_000_000);
+    const attacks: { copyId?: string; damage: number }[] = [];
+    for (let step = 0; step < 30; step += 1) {
+      for (const attack of combat.step(STEP, context(player, [target])).attacks) {
+        attacks.push({ copyId: attack.copyId, damage: attack.result.damage });
+      }
+    }
+
+    const phantomAttacks = attacks.filter((attack) => attack.copyId === 'core-phantom');
+    expect(phantomAttacks.length).toBeGreaterThan(0);
+    const expected =
+      combat.formDamage * E04_PHANTOM_DAMAGE_RATIO * (1 + E04_SUMMON_DAMAGE_BONUS);
+    for (const attack of phantomAttacks) {
+      expect(attack.damage).toBeCloseTo(expected, 10);
+    }
+  });
+
+  it('关闭核心时立即清除幻影，重新开启从头计时', () => {
+    const combat = createCombat();
+    combat.setCorePhantom(true);
+    const ctx = context({ x: 720, y: 480 }, []);
+    advance(combat, E04_PHANTOM_INTERVAL_SECONDS + 0.1, ctx);
+    expect(combat.corePhantom).not.toBeNull();
+
+    combat.setCorePhantom(false);
+    expect(combat.corePhantom).toBeNull();
+
+    combat.setCorePhantom(true);
+    advance(combat, E04_PHANTOM_INTERVAL_SECONDS - 0.2, ctx);
+    expect(combat.corePhantom).toBeNull();
+  });
+
+  it('E04 的 +20% 同时作用于主流形本体攻击', () => {
+    const base = createCombat();
+    const boosted = createCombat();
+    boosted.setCoreSummonBonus(1 + E04_SUMMON_DAMAGE_BONUS);
+
+    const basePosition = base.formPosition;
+    const boostedPosition = boosted.formPosition;
+    const baseTarget = combatant('a', basePosition.x, basePosition.y, 1_000_000);
+    const boostedTarget = combatant(
+      'b',
+      boostedPosition.x,
+      boostedPosition.y,
+      1_000_000,
+    );
+
+    const baseAttack = base.step(
+      STEP,
+      context({ x: 720, y: 480 }, [baseTarget]),
+    ).attacks[0];
+    const boostedAttack = boosted.step(
+      STEP,
+      context({ x: 720, y: 480 }, [boostedTarget]),
+    ).attacks[0];
+
+    expect(baseAttack?.result.damage).toBeCloseTo(16, 10);
+    expect(boostedAttack?.result.damage).toBeCloseTo(
+      16 * (1 + E04_SUMMON_DAMAGE_BONUS),
+      10,
+    );
+  });
+});
+
+describe('I19/I20 召唤物道具', () => {
+  it('I19 召唤物伤害 +18% 只作用于召唤物攻击', () => {
+    const baseline = createCombat();
+    const boosted = createCombat();
+    boosted.setSummonDamageMultiplier(1.18);
+    const baseOrigin = baseline.formPosition;
+    const boostedOrigin = boosted.formPosition;
+    const target = new Combatant({
+      id: 'target',
+      x: baseOrigin.x + 30,
+      y: baseOrigin.y,
+      radius: 12,
+      maxHealth: 1000,
+    });
+    const baseStep = baseline.step(STEP, context({ x: 720, y: 480 }, [target]));
+    const boostedTarget = new Combatant({
+      id: 'target',
+      x: boostedOrigin.x + 30,
+      y: boostedOrigin.y,
+      radius: 12,
+      maxHealth: 1000,
+    });
+    const boostedStep = boosted.step(
+      STEP,
+      context({ x: 720, y: 480 }, [boostedTarget]),
+    );
+    expect(baseStep.attacks).toHaveLength(1);
+    expect(boostedStep.attacks).toHaveLength(1);
+    const baseDamage = baseStep.attacks[0]?.result.damage ?? 0;
+    const boostedDamage = boostedStep.attacks[0]?.result.damage ?? 0;
+    expect(baseDamage).toBeGreaterThan(0);
+    expect(boostedDamage).toBeCloseTo(baseDamage * 1.18, 12);
+  });
+
+  it('I20 召唤物生命 +25%，每秒回复最大生命 1%', () => {
+    const combat = createCombat();
+    const baseMax = combat.formMaxHealth;
+    combat.setSummonHealthMultiplier(1.25);
+    expect(combat.formMaxHealth).toBeCloseTo(baseMax * 1.25, 12);
+
+    combat.damageForm(30, 'true');
+    const before = combat.formHealth;
+    combat.setSummonRegenPercentPerSecond(0.01);
+    const result = combat.step(1, context({ x: 720, y: 480 }, []));
+    expect(result.formHealed).toBeCloseTo(combat.formMaxHealth * 0.01, 12);
+    expect(combat.formHealth).toBeCloseTo(before + combat.formMaxHealth * 0.01, 12);
+
+    // 关闭后不再回复。
+    combat.setSummonRegenPercentPerSecond(0);
+    const healedOff = combat.step(1, context({ x: 720, y: 480 }, [])).formHealed;
+    expect(healedOff).toBe(0);
+  });
+
+  it('I19/I20 非法倍率回退为 1/关闭', () => {
+    const combat = createCombat();
+    const baseMax = combat.formMaxHealth;
+    combat.setSummonDamageMultiplier(0);
+    combat.setSummonHealthMultiplier(Number.NaN);
+    expect(combat.formMaxHealth).toBeCloseTo(baseMax, 12);
   });
 });

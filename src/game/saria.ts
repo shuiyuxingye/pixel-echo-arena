@@ -235,12 +235,14 @@ export interface SariaKResult {
   readonly healShockDamage: number;
 }
 
-/** 一步领域结算的结果；场景据此显示 S02 伤害与 S04 冷却返还。 */
+/** 一步领域结算的结果；场景据此显示 S02 伤害、S04 冷却返还与 H42 护盾。 */
 export interface SariaStepResult {
   /** 本步到期的领域伤害次数（每秒 1 次）；0 表示无。 */
   readonly fieldDamageTicks: number;
   /** 本步由领域累计有效治疗触发的 K 剩余冷却减少秒数。 */
   readonly fieldHealCooldownReduction: number;
+  /** H42 本步到期的领域护盾次数（每秒 1 次）；0 表示无。 */
+  readonly fieldShieldTicks: number;
 }
 
 /** J 盾击的可选目标：精英/Boss 不被击退。 */
@@ -263,6 +265,18 @@ export interface ShieldBashOptions {
   readonly bonusMagicDamage?: number;
   /** 目标受到的法术伤害倍率；钙质化领域内返回 1.3。 */
   readonly magicDamageMultiplier?: (targetId: string) => number;
+  /**
+   * 按目标追加的伤害倍率（H13 连续命中）。在基础 `damageMultiplier` 之上再乘一次；
+   * 返回非正/非有限值时按 1 处理。缺省不影响原有结算。
+   */
+  readonly damageMultiplierFor?: (targetId: string) => number;
+}
+
+/** 倍率兜底：非正/非有限值按 1 处理，避免配置错误让伤害归零。 */
+function resolveMultiplier(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : 1;
 }
 
 /**
@@ -292,15 +306,19 @@ export function resolveShieldBash(
   const byId = new Map(targets.map((target) => [target.combatant.id, target] as const));
   const bonusMagicDamage =
     Number.isFinite(options.bonusMagicDamage) && (options.bonusMagicDamage ?? 0) > 0
-      ? (options.bonusMagicDamage as number) * multiplier
+      ? (options.bonusMagicDamage as number)
       : 0;
 
   const hits: ShieldBashHit[] = [];
   for (const targetable of inSector) {
     const target = byId.get(targetable.id);
     if (!target) continue;
+    const targetMultiplier = resolveMultiplier(
+      options.damageMultiplierFor?.(targetable.id),
+    );
+    const hitMultiplier = multiplier * targetMultiplier;
     const result = target.combatant.applyDamage(
-      attack.damage * multiplier,
+      attack.damage * hitMultiplier,
       attack.damageType,
     );
     let bonusMagicResult: DamageResult | undefined;
@@ -309,7 +327,7 @@ export function resolveShieldBash(
       const factor =
         Number.isFinite(vulnerability) && vulnerability > 0 ? vulnerability : 1;
       bonusMagicResult = target.combatant.applyDamage(
-        bonusMagicDamage * factor,
+        bonusMagicDamage * hitMultiplier * factor,
         'magic',
       );
     }
@@ -330,6 +348,8 @@ export class SariaCombat {
   private lCooldownSeconds = 0;
   private lActiveSeconds = 0;
   private cooldownMultiplier = 1;
+  /** I15：技能持续时间倍率；作用于 L 钙质化领域。 */
+  private durationMultiplier = 1;
   private shieldRemainingSeconds = 0;
   private passiveTriggers = 0;
 
@@ -350,6 +370,10 @@ export class SariaCombat {
   private fieldHealChainCooldownReduction = 0;
   private fieldHealCount = 0;
   private fieldHealTickHadHealing = false;
+  // H40：护盾获得量倍率（0.8 即 −20%）；H42：领域每秒护盾与整秒累计。
+  private shieldGainMultiplierValue = 1;
+  private fieldShieldPerSecondValue = 0;
+  private fieldShieldAccumulator = 0;
   // 领域伤害/治疗按 1 秒 tick 累计；逻辑步长变化不影响每秒节奏。
   private fieldDamageAccumulator = 0;
   private fieldHealAccumulator = 0;
@@ -498,6 +522,25 @@ export class SariaCombat {
     this.cooldownMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   }
 
+  /** I15：技能持续时间倍率；只影响之后展开的钙质化领域。 */
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /**
+   * 进入下一波：清空 K/L 剩余冷却并结束钙质化领域，
+   * 保证两个技能在下一波开始即可施放。护盾作为已获得效果保留到自然到期。
+   */
+  resetForWaveStart(): void {
+    this.kCooldownSeconds = 0;
+    this.lCooldownSeconds = 0;
+    this.lActiveSeconds = 0;
+    this.fieldDamageAccumulator = 0;
+    this.fieldHealAccumulator = 0;
+    this.fieldShieldAccumulator = 0;
+    this.fieldHealTickHadHealing = false;
+  }
+
   /** S01：设置治疗转伤害比例与半径；比例非正表示未拥有。 */
   setHealShock(ratio: number, radius: number): void {
     this.healShockRatio =
@@ -524,6 +567,35 @@ export class SariaCombat {
   /** 领域每秒伤害的当前配置值（0 表示未拥有 S02）。 */
   get fieldDamagePerSecond(): number {
     return this.fieldDamagePerSecondValue;
+  }
+
+  /**
+   * H40：护盾获得量倍率（−20% 即 0.8）。
+   * 同时作用于 K 的直接护盾与 H42 的领域护盾，非法值回落到 1。
+   */
+  setShieldGainMultiplier(multiplier: number): void {
+    this.shieldGainMultiplierValue =
+      Number.isFinite(multiplier) && multiplier >= 0 ? multiplier : 1;
+  }
+
+  /** H40：当前护盾获得量倍率，供测试与开发快照核对。 */
+  get shieldGainMultiplier(): number {
+    return this.shieldGainMultiplierValue;
+  }
+
+  /** H42：领域生效期间每秒获得的护盾；非正表示未拥有。 */
+  setFieldShieldPerSecond(shieldPerSecond: number): void {
+    const next =
+      Number.isFinite(shieldPerSecond) && shieldPerSecond > 0
+        ? Math.max(0, shieldPerSecond)
+        : 0;
+    if (next !== this.fieldShieldPerSecondValue) this.fieldShieldAccumulator = 0;
+    this.fieldShieldPerSecondValue = next;
+  }
+
+  /** 领域每秒护盾的当前配置值（0 表示未拥有 H42）。 */
+  get fieldShieldPerSecond(): number {
+    return this.fieldShieldPerSecondValue;
   }
 
   /** S03：护盾吸收伤害时的反击配置；未拥有时 `enabled=false`。 */
@@ -646,7 +718,9 @@ export class SariaCombat {
     }
 
     // 护盾不叠加：保留较高剩余量，并重新开始 4 秒持续时间。
-    const shield = Math.max(target.shield, this.config.shieldAmount);
+    // H40 守护转攻把本次护盾获得量降到 80%，只影响新获得的量。
+    const shieldGain = this.config.shieldAmount * this.shieldGainMultiplierValue;
+    const shield = Math.max(target.shield, shieldGain);
     target.setShield(shield);
     this.shieldRemainingSeconds = this.config.shieldDurationSeconds;
 
@@ -667,10 +741,11 @@ export class SariaCombat {
   tryActivateL(): boolean {
     if (this.isCalciumFieldActive || this.lCooldownRemaining > TIME_EPSILON) return false;
     this.lCooldownSeconds = this.config.lCooldownSeconds * this.cooldownMultiplier;
-    this.lActiveSeconds = this.config.lDurationSeconds;
+    this.lActiveSeconds = this.config.lDurationSeconds * this.durationMultiplier;
     // 每次展开重新按整秒计 tick；S04 的累计次数跨领域保留。
     this.fieldDamageAccumulator = 0;
     this.fieldHealAccumulator = 0;
+    this.fieldShieldAccumulator = 0;
     this.fieldHealTickHadHealing = false;
     return true;
   }
@@ -683,7 +758,11 @@ export class SariaCombat {
    * 领域伤害与 S04 有效治疗都按整秒 tick 结算，不受逻辑步长变化影响。
    */
   step(stepSeconds: number, target?: SariaShieldTarget): SariaStepResult {
-    const result = { fieldDamageTicks: 0, fieldHealCooldownReduction: 0 };
+    const result = {
+      fieldDamageTicks: 0,
+      fieldHealCooldownReduction: 0,
+      fieldShieldTicks: 0,
+    };
     if (!(stepSeconds > 0) || !Number.isFinite(stepSeconds)) return result;
 
     const fieldSeconds = Math.min(this.lActiveSeconds, stepSeconds);
@@ -724,6 +803,27 @@ export class SariaCombat {
               0,
             );
           }
+        }
+      }
+
+      // H42 不落王城：领域内每满 1 秒获得一次护盾，并刷新护盾持续时间。
+      // 护盾仍只写 `HealthState.shield`；H40 的 −20% 同样作用于这份获得量。
+      if (this.fieldShieldPerSecondValue > 0 && target && !target.isDead) {
+        this.fieldShieldAccumulator += fieldSeconds;
+        while (this.fieldShieldAccumulator >= 1 - TIME_EPSILON) {
+          this.fieldShieldAccumulator = Math.max(0, this.fieldShieldAccumulator - 1);
+          result.fieldShieldTicks += 1;
+        }
+        if (result.fieldShieldTicks > 0) {
+          const gain =
+            this.fieldShieldPerSecondValue *
+            this.shieldGainMultiplierValue *
+            result.fieldShieldTicks;
+          if (gain > 0) target.setShield(target.shield + gain);
+          this.shieldRemainingSeconds = Math.max(
+            this.shieldRemainingSeconds,
+            this.config.shieldDurationSeconds,
+          );
         }
       }
     }

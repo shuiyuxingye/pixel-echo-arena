@@ -109,7 +109,7 @@ describe('命中与技能反馈', () => {
       }
     }
 
-    const castFrames = PLAYER_CAST_DIRECTIONS.map(playerCastFrameIndex);
+    const castFrames = PLAYER_CAST_DIRECTIONS.map((direction) => playerCastFrameIndex(direction));
     expect(new Set(castFrames).size).toBe(PLAYER_CAST_DIRECTIONS.length);
     for (const frame of castFrames) {
       expect(Math.floor(frame / 8)).toBe(PLAYER_CAST_ROW);
@@ -122,7 +122,7 @@ describe('命中与技能反馈', () => {
     // 命中反馈：纯逻辑计划 + 敌人身体闪白 + 伤害字。
     expect(scene).toContain('planHitFeedback(');
     expect(scene).toContain('flashEnemyHit(');
-    expect(scene).toContain('setFillStyle(HIT_FEEDBACK.flashColor');
+    expect(scene).toContain('setTintFill(HIT_FEEDBACK.flashColor');
     expect(scene).toContain('feedback?.showDamageNumber');
     // 玩家受击播放四向受击帧并闪白。
     expect(scene).toContain("playerAnimationKey(direction, 'hurt'");
@@ -130,7 +130,7 @@ describe('命中与技能反馈', () => {
     expect(scene).toContain('player.setTintFill(HIT_FEEDBACK.flashColor)');
     // 四角色技能配色与八向施法帧。
     expect(scene).toContain('characterEffectColors(this.character.id)');
-    expect(scene).toContain('playerCastFrameIndex(this.castPoseFacing)');
+    expect(scene).toContain('playerCastFrameIndex(this.castPoseFacing, this.playerArt())');
     expect(scene).toContain('showCastPulse()');
     expect(scene).toContain('showUpgradePulse()');
     // 敌方预警统一暖红且高于友方特效层。

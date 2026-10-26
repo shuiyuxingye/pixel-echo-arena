@@ -5,6 +5,10 @@ import {
   type SoundPlayer,
 } from './game/audio';
 import type { CharacterId } from './game/data';
+import {
+  BUILD_PANEL_EVENT,
+  type BuildPanelEventPayload,
+} from './game/build-panel';
 import { SCENE_KEYS } from './game/config';
 import { installDevDiagnostics, registerDevGame } from './game/dev-diagnostics';
 import { parseDevScenario } from './game/dev-scenario';
@@ -26,6 +30,10 @@ import {
   type RunResultPayload,
 } from './game/run-results';
 import { RETURN_TO_CHARACTER_SELECT_EVENT, runSessions } from './game/run-session';
+import {
+  SHOP_PANEL_EVENT,
+  type ShopPanelEventPayload,
+} from './game/shop-ui';
 import { createSettingsStore } from './game/settings';
 import type { ArenaScene } from './game/scenes/ArenaScene';
 import {
@@ -35,8 +43,10 @@ import {
 import { mountHelp } from './ui/help-panel';
 import { mountMenu, type MenuResumeState } from './ui/menu';
 import { mountPauseMenu } from './ui/pause-menu';
+import { mountBuildPanel } from './ui/build-panel';
 import { mountResultPanel } from './ui/result-panel';
 import { mountSettingsPanel } from './ui/settings-panel';
+import { mountShopPanel } from './ui/shop-panel';
 
 /**
  * 应用壳：DOM 主菜单 → 选角页 → 创建 Phaser 游戏。
@@ -128,6 +138,25 @@ export function bootstrapGameShell(doc: Document = document): () => void {
     getRecords: () => loadRunResults(),
   });
 
+  // 波间商店：DOM 面板只渲染视图并上报键盘动作，交易由场景会话提交。
+  const shopPanel = mountShopPanel({
+    doc,
+    onAction: (action) => {
+      const scene = game?.scene.getScene(SCENE_KEYS.arena) as ArenaScene | undefined;
+      scene?.handleShopPanelAction(action);
+    },
+  });
+
+  // 构筑面板：战斗内 B 打开并暂停；B/Esc 由 DOM 面板上报关闭，场景恢复战斗。
+  const buildPanel = mountBuildPanel({
+    doc,
+    onClose: () => {
+      const scene = game?.scene.getScene(SCENE_KEYS.arena) as ArenaScene | undefined;
+      scene?.closeBuildPanel();
+      buildPanel.hide();
+    },
+  });
+
   function closeSubOverlay(): void {
     help.hide();
     settingsPanel.hide();
@@ -167,6 +196,8 @@ export function bootstrapGameShell(doc: Document = document): () => void {
     settingsPanel.hide();
     pauseMenu.hide();
     resultPanel.hide();
+    shopPanel.hide();
+    buildPanel.hide();
     overlayReturn = null;
   };
 
@@ -206,6 +237,8 @@ export function bootstrapGameShell(doc: Document = document): () => void {
       help.hide();
       settingsPanel.hide();
       resultPanel.hide();
+      buildPanel.hide();
+      shopPanel.hide();
       overlayReturn = null;
       pauseMenu.show(payload.reason);
     });
@@ -214,9 +247,43 @@ export function bootstrapGameShell(doc: Document = document): () => void {
       pauseMenu.hide();
       help.hide();
       settingsPanel.hide();
+      shopPanel.hide();
+      buildPanel.hide();
       overlayReturn = null;
       resultPanel.show(payload);
     });
+    created.events.on(SHOP_PANEL_EVENT, (payload: ShopPanelEventPayload) => {
+      if (payload.type === 'close') {
+        shopPanel.hide();
+        return;
+      }
+      // 商店是波间唯一交互层，先收起其他覆盖层再显示。
+      pauseMenu.hide();
+      help.hide();
+      settingsPanel.hide();
+      resultPanel.hide();
+      buildPanel.hide();
+      overlayReturn = null;
+      if (payload.type === 'open') shopPanel.show(payload.view);
+      else shopPanel.update(payload.view);
+    });
+    created.events.on(
+      BUILD_PANEL_EVENT,
+      (payload: BuildPanelEventPayload) => {
+        if (payload.type === 'close') {
+          buildPanel.hide();
+          return;
+        }
+        // 构筑面板独占战斗暂停；打开时收起暂停菜单与其他覆盖层。
+        pauseMenu.hide();
+        help.hide();
+        settingsPanel.hide();
+        resultPanel.hide();
+        shopPanel.hide();
+        overlayReturn = null;
+        buildPanel.show(payload.view);
+      },
+    );
     created.events.on(RETURN_TO_CHARACTER_SELECT_EVENT, () => {
       // 结算面板可见时由面板决定去向（重开/选角/记录），场景的 Enter 不再重复处理。
       if (resultPanel.isVisible()) return;
@@ -299,5 +366,7 @@ export function bootstrapGameShell(doc: Document = document): () => void {
     characterSelect?.destroy();
     help.destroy();
     settingsPanel.destroy();
+    shopPanel.destroy();
+    buildPanel.destroy();
   };
 }

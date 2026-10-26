@@ -7,7 +7,9 @@
  * 本模块不依赖 DOM/Phaser。
  */
 
-export const USER_SETTINGS_STORAGE_KEY = 'pixel-echo.settings.v1';
+import { V2_STORAGE_KEYS } from './storage-namespace';
+
+export const USER_SETTINGS_STORAGE_KEY = V2_STORAGE_KEYS.settings;
 
 /** Phaser registry 中共享设置 store 的键。 */
 export const RUN_SETTINGS_REGISTRY_KEY = 'pixel-echo.settings-store';
@@ -20,6 +22,8 @@ export interface KeyBindings {
   readonly attack: string;
   readonly skillK: string;
   readonly skillL: string;
+  readonly skillU: string;
+  readonly skillI: string;
   readonly dodge: string;
   readonly cycleTarget: string;
 }
@@ -33,6 +37,8 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   attack: 'KeyJ',
   skillK: 'KeyK',
   skillL: 'KeyL',
+  skillU: 'KeyU',
+  skillI: 'KeyI',
   dodge: 'Space',
   cycleTarget: 'Tab',
 };
@@ -131,6 +137,8 @@ export const KEY_BINDING_LABELS: Readonly<Record<KeyBindingAction, string>> = {
   attack: '普通攻击',
   skillK: '战术技能 K',
   skillL: '招牌技能 L',
+  skillU: '自由技能 U',
+  skillI: '自由技能 I',
   dodge: '闪避',
   cycleTarget: '切换提示目标',
 };
@@ -245,6 +253,17 @@ export function combatBindingActionForKeyCode(
   return null;
 }
 
+/**
+ * 界面快捷键（如 B 构筑面板）的冲突判定：该 code 是否已被战斗动作占用。
+ * 只回答“会不会吞掉战斗输入”，不解析具体动作。
+ */
+export function isKeyBoundToCombatAction(
+  bindings: KeyBindings,
+  code: string,
+): boolean {
+  return combatBindingActionForKeyCode(bindings, code) !== null;
+}
+
 export function movementBindingActionForKeyCode(
   bindings: KeyBindings,
   code: string,
@@ -268,6 +287,14 @@ export interface SettingsStore {
   /** 冲突时不写入，保持原绑定；取消编辑由调用方直接丢弃候选键。 */
   rebind(action: KeyBindingAction, code: string): RebindResult;
   resetBindings(): UserSettings;
+  /**
+   * 一次性导入 V0.1 的键位与静音开关；由玩家确认后调用。
+   * 屏幕震动/减少动态效果不迁移，保持当前 V2 设置。
+   */
+  importLegacySettings(patch: {
+    readonly keyBindings: KeyBindings;
+    readonly muted: boolean;
+  }): UserSettings;
   /** 立即通知；返回取消订阅函数。 */
   subscribe(listener: (settings: UserSettings) => void): () => void;
   /** 最近一次写入是否成功；存储不可用时为 false，游戏可照常继续。 */
@@ -314,6 +341,12 @@ export function createSettingsStore(
     },
     resetBindings: () =>
       commit({ ...current, keyBindings: resetKeyBindings() }),
+    importLegacySettings: (patch) =>
+      commit({
+        ...current,
+        keyBindings: { ...patch.keyBindings },
+        muted: patch.muted,
+      }),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

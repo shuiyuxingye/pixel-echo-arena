@@ -154,6 +154,17 @@ describe('魂灵寿命与上限', () => {
     expect(soul.cooldownRemaining).toBe(0);
     expect(soul.trySummon({ x: 40, y: 0 })).not.toBeNull();
   });
+
+  it('进入下一波清空剩余冷却，K 立即就绪且保留已有魂灵', () => {
+    const soul = system();
+    soul.trySummon({ x: 0, y: 0 });
+    soul.step(2, []);
+
+    soul.resetForWaveStart();
+    expect(soul.cooldownRemaining).toBe(0);
+    expect(soul.soulCount).toBe(1);
+    expect(soul.trySummon({ x: 40, y: 0 })).not.toBeNull();
+  });
 });
 
 describe('魂灵周期标记与减速', () => {
@@ -227,5 +238,19 @@ describe('场景接入', () => {
     expect(source).toContain("action === 'skillK'");
     expect(source).toContain('this.soul.step');
     expect(source).toContain('slowRemaining');
+  });
+});
+
+describe('I15 技能持续时间倍率', () => {
+  it('延长魂灵寿命，不改变 tick 与冷却', () => {
+    const soul = new SoulSystem(config(), new FakeMarks());
+    soul.setDurationMultiplier(1.15);
+    expect(soul.trySummon({ x: 720, y: 480 })).not.toBeNull();
+    const stillAlive = soul.step(12.1, []);
+    expect(stillAlive.expiredSoulIds).toHaveLength(0);
+    expect(soul.soulCount).toBe(1);
+    const expired = soul.step(1.8, []);
+    expect(expired.expiredSoulIds).toHaveLength(1);
+    expect(soul.soulCount).toBe(0);
   });
 });

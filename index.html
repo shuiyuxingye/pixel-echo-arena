@@ -3,12 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0d0b12" />
+    <meta name="theme-color" content="#09141c" />
+    <link rel="icon" type="image/png" href="/assets/art/icon-xp.png" />
     <meta
       name="description"
-      content="像素回响：泰拉试炼 — 单人俯视角像素动作肉鸽。四名干员，九波敌潮，一座废弃实验场。"
+      content="像素回响：四人试炼 — 单人俯视角像素动作肉鸽。四名干员，18 波敌潮，波间商店与 48 种海克斯构筑。"
     />
-    <title>像素回响：泰拉试炼</title>
+    <title>像素回响：四人试炼</title>
   </head>
   <body>
     <div id="app">
@@ -19,12 +20,12 @@
         <div class="menu-scanlines" aria-hidden="true"></div>
 
         <main class="menu-panel" aria-labelledby="game-title">
-          <p class="menu-kicker">ROGUELITE · PIXEL ARENA</p>
+          <p class="menu-kicker">PIXEL ECHO / THE TRIAL</p>
           <h1 id="game-title" class="menu-title">像素回响</h1>
-          <p class="menu-subtitle">泰拉试炼</p>
+          <p class="menu-subtitle">四人试炼</p>
           <p class="menu-description">
-            四名干员，九波敌潮，一座废弃实验场。<br />
-            走位、闪避，然后活下来。
+            四位冒险者，十八重敌潮。<br />
+            在破碎的熔炉遗迹，拼出属于你的强势构筑。
           </p>
           <p class="menu-controls">WASD 移动 · J 普攻 · K / L 技能 · Space 闪避</p>
           <div class="menu-actions">
@@ -72,8 +73,8 @@
 
         <section class="character-select-panel" aria-labelledby="character-select-title">
           <header class="character-select-header">
-            <p class="menu-kicker">SELECT OPERATOR</p>
-            <h2 id="character-select-title" class="character-select-title">选择干员</h2>
+            <p class="menu-kicker">CHOOSE YOUR ECHO</p>
+            <h2 id="character-select-title" class="character-select-title">选择你的回响</h2>
             <p class="character-select-hint">
               WASD / 方向键 移动焦点 · Enter 确认 · Esc 返回主菜单
             </p>
@@ -84,7 +85,7 @@
             role="radiogroup"
             aria-labelledby="character-select-title"
           ></div>
-          <p class="character-select-footnote">选中角色带入战斗，局中不可更换</p>
+          <p class="character-select-footnote">四种战斗风格 · 同一座熔炉试炼 · Enter 出发</p>
         </section>
       </div>
 
@@ -158,6 +159,79 @@
             </button>
           </div>
           <p id="result-hint" class="game-panel-hint">W/S 或方向键选择 · Enter 确认</p>
+        </section>
+      </div>
+
+      <div
+        id="shop-overlay"
+        class="game-overlay shop-overlay"
+        hidden
+        aria-hidden="true"
+      >
+        <section
+          id="shop-panel"
+          class="game-panel shop-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shop-title"
+        >
+          <header class="shop-header">
+            <div class="shop-title-row">
+              <p class="menu-kicker">WAVE CLEAR</p>
+              <h2 id="shop-title" class="game-panel-title">商店</h2>
+            </div>
+            <div id="shop-meta" class="shop-meta"></div>
+          </header>
+          <div id="shop-tabs" class="shop-tabs" role="tablist"></div>
+          <div class="shop-body">
+            <div id="shop-main" class="shop-main"></div>
+            <aside class="shop-side" aria-labelledby="shop-side-title">
+              <h3 id="shop-side-title" class="shop-side-title">追踪配方</h3>
+              <div id="shop-tracking" class="shop-tracking"></div>
+            </aside>
+          </div>
+          <section id="shop-detail" class="shop-detail" aria-live="polite"></section>
+          <div id="shop-confirm" class="shop-confirm" hidden></div>
+          <p id="shop-message" class="shop-message" role="status"></p>
+          <footer class="shop-footer">
+            <div id="shop-skills" class="shop-skills"></div>
+            <div class="shop-actions">
+              <span id="shop-reroll" class="shop-reroll"></span>
+              <span id="shop-lock" class="shop-lock"></span>
+              <button id="shop-next-wave" type="button" class="btn btn-primary shop-next">
+                准备下一波（空格）
+              </button>
+            </div>
+          </footer>
+          <p id="shop-hint" class="game-panel-hint"></p>
+        </section>
+      </div>
+
+      <div id="build-overlay" class="game-overlay build-overlay" hidden aria-hidden="true">
+        <section
+          id="build-panel"
+          class="game-panel build-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="build-title"
+          tabindex="-1"
+        >
+          <header class="build-header">
+            <div class="build-title-row">
+              <p class="menu-kicker">RUN BUILD</p>
+              <h2 id="build-title" class="game-panel-title">构筑</h2>
+            </div>
+            <p id="build-summary" class="build-summary"></p>
+          </header>
+          <section class="build-attributes-section" aria-labelledby="build-attributes-title">
+            <h3 id="build-attributes-title" class="build-section-title">当前净属性</h3>
+            <div id="build-attributes" class="build-attributes"></div>
+          </section>
+          <section class="build-groups-section" aria-labelledby="build-groups-title">
+            <h3 id="build-groups-title" class="build-section-title">来源分组</h3>
+            <div id="build-groups" class="build-groups"></div>
+          </section>
+          <p id="build-hint" class="game-panel-hint"></p>
         </section>
       </div>
 

@@ -395,7 +395,8 @@ describe('波末奖励队列顺序', () => {
     });
 
     expect(flow.begin(0)).toBe('absorb');
-    expect(flow.completeAbsorb(2)).toBe('upgrade');
+    expect(flow.completeAbsorb(2)).toBe('briefing');
+    expect(flow.completeBriefing()).toBe('upgrade');
 
     const first = run.createChoice('upgrade');
     expect(first.hand).toHaveLength(CARDS_PER_HAND);

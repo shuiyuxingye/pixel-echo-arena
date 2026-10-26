@@ -6,11 +6,14 @@
  * - 使用独立的 localStorage 键与 `schemaVersion`，不触碰设置、键位或续局快照；
  * - 存储不可写时返回 `saved: false`，由结算界面提示，不阻断本局。
  */
-import { UPGRADE_LIST, getCharacter, isCharacterId, type CharacterId } from './data';
+import { TOTAL_WAVES, UPGRADE_LIST, getCharacter, isCharacterId, type CharacterId } from './data';
+import { createUniqueSuffix } from './random';
 import type { RunOutcome } from './run-state';
 
+import { V2_STORAGE_KEYS } from './storage-namespace';
+
 /** 成绩记录的 localStorage 键；不与续局快照混用。 */
-export const RUN_RESULTS_STORAGE_KEY = 'pixel-echo.results.v1';
+export const RUN_RESULTS_STORAGE_KEY = V2_STORAGE_KEYS.results;
 
 /** 成绩结构版本；未知版本按损坏处理并允许新记录覆盖。 */
 export const RUN_RESULTS_SCHEMA_VERSION = 1;
@@ -65,7 +68,8 @@ interface StoredRunResults {
 
 /** 生成跨页面刷新也唯一的本局标识。 */
 export function createRunKey(now: number = Date.now()): string {
-  const suffix = Math.random().toString(36).slice(2, 8);
+  // 熵源集中在 random.ts；成绩标识不参与玩法随机。
+  const suffix = createUniqueSuffix(6);
   return `${now.toString(36)}-${suffix}`;
 }
 
@@ -114,7 +118,7 @@ export function validateRunResultRecord(
   if (typeof record.runId !== 'string' || record.runId.length === 0) return false;
   if (!isCharacterId(record.characterId)) return false;
   if (record.outcome !== 'victory' && record.outcome !== 'defeat') return false;
-  if (!isInteger(record.wave) || record.wave < 1 || record.wave > 9) return false;
+  if (!isInteger(record.wave) || record.wave < 1 || record.wave > TOTAL_WAVES) return false;
   if (!isFiniteNumber(record.durationSeconds) || record.durationSeconds < 0) return false;
   if (!isInteger(record.kills) || record.kills < 0) return false;
   if (!isFiniteNumber(record.damageDealt) || record.damageDealt < 0) return false;

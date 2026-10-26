@@ -16,4 +16,7 @@ scripts/ralph/.ralph-checkpoint.json
 scripts/ralph/prd.json.bak
 scripts/ralph/prd.json.tmp
 scripts/ralph/snapshot*.md
+# 解压后的分享包目录由 tools/docs/package_delivery.py 生成，不作为源文件提交
+output/share/像素回响-试玩版/
+output/share/像素回响-图文文档/
 tmp/pdfs/

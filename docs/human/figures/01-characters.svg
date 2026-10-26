@@ -861,7 +861,7 @@
 <rect x="138" y="255" width="24" height="3" rx="0" fill="#191521" stroke="none" stroke-width="1"/>
 <rect x="162" y="255" width="3" height="3" rx="0" fill="#17131f" stroke="none" stroke-width="1"/>
 <rect x="105" y="258" width="60" height="3" rx="0" fill="#17131f" stroke="none" stroke-width="1"/>
-<text x="135" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">维什戴尔</text>
+<text x="135" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">爆破手</text>
 <text x="135" y="362" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="middle">爆破 / 标记</text>
 <rect x="270" y="30" width="220" height="380" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
 <rect x="288" y="48" width="184" height="6" rx="0" fill="#087F8C" stroke="none" stroke-width="1"/>
@@ -1623,7 +1623,7 @@
 <rect x="383" y="255" width="24" height="3" rx="0" fill="#151726" stroke="none" stroke-width="1"/>
 <rect x="407" y="255" width="3" height="3" rx="0" fill="#1a1420" stroke="none" stroke-width="1"/>
 <rect x="350" y="258" width="60" height="3" rx="0" fill="#1a1420" stroke="none" stroke-width="1"/>
-<text x="380" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">阿米娅</text>
+<text x="380" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">术士</text>
 <text x="380" y="362" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="middle">术法 / 真伤</text>
 <rect x="515" y="30" width="220" height="380" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
 <rect x="533" y="48" width="184" height="6" rx="0" fill="#DF9D38" stroke="none" stroke-width="1"/>
@@ -2328,7 +2328,7 @@
 <rect x="652" y="255" width="3" height="3" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
 <rect x="697" y="255" width="3" height="3" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
 <rect x="595" y="258" width="60" height="3" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
-<text x="625" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">塞雷娅</text>
+<text x="625" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">骑士</text>
 <text x="625" y="362" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="middle">盾击 / 治疗</text>
 <rect x="760" y="30" width="220" height="380" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
 <rect x="778" y="48" width="184" height="6" rx="0" fill="#479C85" stroke="none" stroke-width="1"/>
@@ -3020,6 +3020,6 @@
 <rect x="873" y="255" width="24" height="3" rx="0" fill="#358866" stroke="none" stroke-width="1"/>
 <rect x="897" y="255" width="3" height="3" rx="0" fill="#16211f" stroke="none" stroke-width="1"/>
 <rect x="840" y="258" width="60" height="3" rx="0" fill="#16211f" stroke="none" stroke-width="1"/>
-<text x="870" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">缪尔赛思</text>
+<text x="870" y="322" font-family="STHeiti, PingFang SC, sans-serif" font-size="26" fill="#172B36" text-anchor="middle">战术家</text>
 <text x="870" y="362" font-family="STHeiti, PingFang SC, sans-serif" font-size="21" fill="#51636C" text-anchor="middle">流形 / 控制</text>
 </svg>

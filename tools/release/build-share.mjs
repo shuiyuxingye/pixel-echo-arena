@@ -33,6 +33,10 @@ const ARTIFACT_PATH = path.join(OUT_DIR, '像素回响.html');
 const NOTICES_PATH = path.join(OUT_DIR, 'THIRD_PARTY_NOTICES.txt');
 const REPORT_PATH = path.join(ROOT, 'output', 'share', 'build-report.json');
 
+/** 2026-10-26 用户取消包体硬上限：优先画质与完整度，只记录实际字节数。 */
+const MAX_ARTIFACT_BYTES = null;
+const MAX_GAME_ZIP_BYTES = null;
+
 const MIME_TYPES = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -255,6 +259,13 @@ const dynamicImports = uniqueMatches(html, /\bimport\s*\(\s*["'`][^"'`]+["'`]/g)
 const staticImports = uniqueMatches(html, /(?:^|[;\n}])\s*import\s+(?:[\w*{]|["'])/g);
 const remainingAssetRefs = uniqueMatches(html, /\/assets\/[A-Za-z0-9._/-]+/g);
 const remoteStringHosts = uniqueMatches(html, /https?:\/\/[A-Za-z0-9.-]+/g).sort();
+const devBridgeMarkers = uniqueMatches(html, /__PIXEL_ECHO_(?:DEV|DIAG)__/g);
+const devEntryRefs = uniqueMatches(html, /\bdev=1\b|\bperf=1\b/g);
+const screenshotRefs = uniqueMatches(html, /(?:^|\/)screenshots\//g);
+const credentialMarkers = uniqueMatches(
+  html,
+  /(?:ANTHROPIC_API_KEY|OPENAI_API_KEY|AWS_SECRET_ACCESS_KEY|BEGIN (?:RSA |EC )?PRIVATE KEY)/g,
+);
 
 const staticChecks = {
   externalScriptTags: scriptSrcs.length,
@@ -269,6 +280,10 @@ const staticChecks = {
   inertRemoteStringHosts: remoteStringHosts,
   hasInlineModuleScript: /<script\s+type="module">/.test(html),
   hasInlineStyle: /<style>/.test(html),
+  devBridgeMarkers: devBridgeMarkers.length,
+  devEntryRefs: devEntryRefs.length,
+  screenshotRefs: screenshotRefs.length,
+  credentialMarkers: credentialMarkers.length,
 };
 
 const blockingProblems = [];
@@ -282,6 +297,11 @@ if (staticChecks.staticImports > 0) blockingProblems.push('存在静态 import �
 if (staticChecks.remainingAssetUrls > 0)
   blockingProblems.push('仍有 /assets/ 外部资源引用');
 if (staticChecks.modulePreloadLinks > 0) blockingProblems.push('仍有 modulepreload 链接');
+if (staticChecks.devBridgeMarkers > 0)
+  blockingProblems.push('产物包含开发专用状态桥标记');
+if (staticChecks.devEntryRefs > 0) blockingProblems.push('产物包含开发入口参数');
+if (staticChecks.screenshotRefs > 0) blockingProblems.push('产物引用截图目录');
+if (staticChecks.credentialMarkers > 0) blockingProblems.push('产物包含凭证标记');
 
 if (blockingProblems.length > 0) {
   fail(blockingProblems.join('；'));
@@ -307,7 +327,7 @@ const viteCoreLicense = viteLicenseFull
   .split('# Licenses of bundled dependencies')[0]
   .trim();
 const notices = [
-  '像素回响：泰拉试炼 — 单文件分享版 第三方许可说明',
+  '像素回响：四人试炼 — 单文件分享版 第三方许可说明',
   '=================================================',
   '',
   `生成时间：${new Date().toISOString()}`,
@@ -348,7 +368,7 @@ const notices = [
   '',
   '--------------------------------------------------',
   '美术资源',
-  'public/assets/ 下的 PNG 由本项目 tools/generate-assets.mjs 生成，随游戏本体分发。',
+  'V0.3源图由内置ImageGen生成，tools/art/build-art.mjs装配生产PNG；随游戏内联分发，来源见docs/素材来源说明.md。',
   '--------------------------------------------------',
   '',
 ].join('\n');
@@ -415,6 +435,13 @@ const report = {
     files: distAssets,
   },
   productionAssets: assetManifest,
+  limits: {
+    artifactMaxBytes: MAX_ARTIFACT_BYTES,
+    artifactBytes,
+    artifactWithinLimit: null,
+    policy: 'quality-first-no-hard-cap',
+    gameZipMaxBytes: MAX_GAME_ZIP_BYTES,
+  },
   staticChecks: {
     status: 'passed',
     checks: staticChecks,
@@ -431,8 +458,8 @@ const report = {
       note: '需在断网环境中用 file:// 打开产物，验证主菜单→选角→战斗、四角色资产、移动/攻击/暂停与 localStorage。',
     },
     notVerified: [
-      '整局通关与试玩机器人：US-026a 已被用户主动 blocked，本次不重新打开。',
-      '性能/泄漏指标：US-026b 已单独验收，本次不重跑。',
+      'US-066 人工 18 波普通构筑试玩：用户于 2026-10-25 明确要求跳过，未执行，不视为通关验证。',
+      'US-051 性能与泄漏检测：用户于 2026-10-25 明确要求跳过，未运行 60 秒压力与 5 次重开检查，不宣称达到 50 FPS 或无泄漏。',
       '除已验证浏览器外的其他浏览器/系统组合。',
     ],
   },

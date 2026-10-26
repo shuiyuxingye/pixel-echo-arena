@@ -15,8 +15,10 @@
  * - 跟随玩家；距离玩家超过 240 时回到身边最近空位，不穿墙、不卡墙。
  *   跟随移动复用 arena 的圆形碰撞与通视切向绕行原语，不另建寻路。
  * - 切换至近战、重建或流形死亡时清除远程副本，反复切换不会累积。
- * - 专属强化 M01–M04（`docs/game-design.md` §6.3）：副本/窃取上限、主流形回复、
- *   拉拽范围与束缚时间、玩家 J 命中后的主流形补攻。
+ * - 专属强化 M01–M04（`docs/game-design.md` §6.3）与专属海克斯 H43–H48
+ *   （`docs/design/v0.2/02-content-catalog.md`）：副本/窃取上限、主流形回复、
+ *   拉拽范围与束缚时间、玩家 J 命中后的主流形补攻；H46 脆弱军团改变召唤物
+ *   伤害与生命上限，H48 形态接力在切换后给召唤物 3 秒攻速加成。
  *
  * 数值来自 `src/game/data/characters.ts` 与 `docs/game-design.md` §5.4。
  */
@@ -29,10 +31,18 @@ import {
 import {
   computeDamage,
   distanceSquared,
+  targetKindPriority,
   type Combatant,
   type CombatPoint,
   type DamageResult,
 } from './combat';
+import { BOSS_CONTROL_SLOW_MULTIPLIER } from './boss';
+import {
+  E04_MAX_PHANTOMS,
+  E04_PHANTOM_DAMAGE_RATIO,
+  E04_PHANTOM_DURATION_SECONDS,
+  E04_PHANTOM_INTERVAL_SECONDS,
+} from './core-effects';
 import { requireUpgradeParam, type DamageType } from './data';
 import { FACING_LIST, facingFromVector, type Facing } from './movement';
 import type { MuelsyseWorldSnapshot } from './world-snapshot';
@@ -47,10 +57,23 @@ export const MUELSYSE_FOLLOW_SPEED = 240;
 export const MUELSYSE_FORM_RADIUS = 12;
 /** 远程副本的碰撞半径；表现比主流形略小。 */
 export const MUELSYSE_COPY_RADIUS = 10;
+/** 主流形/远程副本的精灵透明度：本体保持原色，主流形半透明，副本更淡。 */
+export const MUELSYSE_FORM_ALPHA = 0.84;
+export const MUELSYSE_COPY_ALPHA = 0.66;
+/** 副本的 96 帧显示缩放；主流形沿用精灵表规格的 displayScale。 */
+export const MUELSYSE_COPY_DISPLAY_SCALE = 0.58;
+/** 脚下水体标记的半轴（世界像素）；本体无标记，主流形大、副本小。 */
+export const MUELSYSE_FORM_FOOT_MARK = { radiusX: 18, radiusY: 7 } as const;
+export const MUELSYSE_COPY_FOOT_MARK = { radiusX: 14, radiusY: 6 } as const;
+/** 水体染色与脚下标记配色。 */
+export const MUELSYSE_MELEE_TINT = 0x7fe0b8;
+export const MUELSYSE_RANGED_TINT = 0x9df2dd;
+export const MUELSYSE_FOOT_MARK_COLOR = 0x5fd8d0;
+export const MUELSYSE_FOOT_MARK_STROKE = 0x9df2dd;
 /** Boss 的眩晕/束缚转为减速后，持续时间相对于原值的比例。 */
 export const BOSS_CONTROL_DURATION_RATIO = 0.3;
-/** Boss 控制转减速后的移速倍率（50% 减速）。 */
-export const BOSS_CONTROL_SLOW_MULTIPLIER = 0.5;
+/** Boss 控制转减速后的移速倍率（50% 减速），与 Boss 规则共用同一来源。 */
+export { BOSS_CONTROL_SLOW_MULTIPLIER };
 /** 远程副本的默认站位偏移（相对主流形）。 */
 const COPY_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-38, 16],
@@ -230,6 +253,23 @@ export interface MuelsyseStepResult {
   readonly moved: boolean;
   /** 本步 M02 生态复苏为主流形回复的生命；未拥有或满血为 0。 */
   readonly formHealed: number;
+  /** 本步 E04 是否刚复制出一个幻影。 */
+  readonly spawnedCorePhantom: boolean;
+}
+
+/** E04 幻影的只读快照；场景据此绘制短标签与回收表现。 */
+export interface MuelsyseCorePhantomSnapshot {
+  readonly x: number;
+  readonly y: number;
+  readonly remainingSeconds: number;
+}
+
+/** E04 幻影的内部状态：4 秒寿命、独立攻击计时，同时最多 1 个。 */
+interface CorePhantomState {
+  x: number;
+  y: number;
+  remainingSeconds: number;
+  attackCooldownSeconds: number;
 }
 
 /** 内部副本状态。 */
@@ -313,6 +353,8 @@ export class MuelsyseCombat {
   private lActiveThisStep = false;
   private nextPullAtSeconds = 0;
   private cooldownMultiplier = 1;
+  /** I15：技能持续时间倍率；作用于 L 浅层适应与远程副本寿命。 */
+  private durationMultiplier = 1;
   private attackCooldownSeconds = 0;
   private avoidSeconds = 0;
   private avoidSign: 1 | -1 = 1;
@@ -331,6 +373,23 @@ export class MuelsyseCombat {
   private waterMirrorCooldownSecondsValue = 0;
   private waterMirrorCooldownRemaining = 0;
   private readonly controls = new Map<string, ControlState>();
+  // E04 群落意志：召唤物伤害倍率与主召唤物的 4 秒幻影。
+  private coreSummonDamageMultiplierValue = 1;
+  private corePhantomEnabled = false;
+  private corePhantomTimerSeconds = E04_PHANTOM_INTERVAL_SECONDS;
+  private corePhantomValue: CorePhantomState | null = null;
+  // I19 召唤物伤害、I20 召唤物生命上限与每秒回复。
+  private itemSummonDamageMultiplierValue = 1;
+  private summonHealthMultiplierValue = 1;
+  private summonRegenPercentPerSecondValue = 0;
+  private summonRegenAccumulatorSeconds = 0;
+  // H46 脆弱军团：召唤物伤害 +35%、生命上限 −25%。
+  private tacticianSummonDamageMultiplierValue = 1;
+  private tacticianSummonHealthMultiplierValue = 1;
+  // H48 形态接力：切换成功后召唤物攻速加成窗口。
+  private formRelayBonusRatioValue = 0;
+  private formRelayDurationSecondsValue = 0;
+  private formRelayRemainingSecondsValue = 0;
 
   constructor(config: MuelsyseCombatConfig) {
     if (
@@ -380,7 +439,7 @@ export class MuelsyseCombat {
     );
     this.x = start.x;
     this.y = start.y;
-    this.health = this.formConfig.maxHealth;
+    this.health = this.formMaxHealth;
   }
 
   get form(): StreamForm {
@@ -408,11 +467,33 @@ export class MuelsyseCombat {
   }
 
   get formMaxHealth(): number {
-    return this.formConfig.maxHealth;
+    return (
+      this.formConfig.maxHealth *
+      this.summonHealthMultiplierValue *
+      this.tacticianSummonHealthMultiplierValue
+    );
+  }
+
+  /** 角色基础配置的远程副本上限（H43/M01 的加成基准）。 */
+  get baseMaxCopies(): number {
+    return this.config.copies.maxCopies;
+  }
+
+  /** 角色基础配置的近战窃取上限（H43/M01 的加成基准）。 */
+  get baseMaxMeleeStacks(): number {
+    return this.config.melee.maxStacks;
   }
 
   get formStacks(): number {
     return this.stacks;
+  }
+
+  /**
+   * S06 治疗脉冲等外部治疗：主流形恢复指定生命，不超过上限。
+   * 死亡形态不复活，返回实际回复量。
+   */
+  healSummon(amount: number): number {
+    return this.healForm(amount);
   }
 
   /** 近战流形的护甲：每层窃取 +2；远程流形没有层数加成。 */
@@ -435,6 +516,23 @@ export class MuelsyseCombat {
 
   get attackIntervalSeconds(): number {
     return this.formConfig.attackIntervalSeconds;
+  }
+
+  /** H48：当前召唤物攻速倍率；形态接力窗口内为 1.4，否则为 1。 */
+  get attackSpeedMultiplier(): number {
+    return this.formRelayRemainingSecondsValue > TIME_EPSILON
+      ? 1 + this.formRelayBonusRatioValue
+      : 1;
+  }
+
+  /** 主流形当前实际攻击间隔（已计入 H48 攻速加成）。 */
+  get effectiveAttackIntervalSeconds(): number {
+    return this.attackIntervalFor(this.formConfig.attackIntervalSeconds);
+  }
+
+  /** H48 形态接力的剩余秒数。 */
+  get formRelayRemainingSeconds(): number {
+    return Math.max(0, this.formRelayRemainingSecondsValue);
   }
 
   get attackDamageType(): DamageType {
@@ -462,7 +560,7 @@ export class MuelsyseCombat {
   }
 
   get shallowAdaptationDurationSeconds(): number {
-    return this.config.shallowAdaptation.durationSeconds;
+    return this.config.shallowAdaptation.durationSeconds * this.durationMultiplier;
   }
 
   /** 近战 L 的拉拽半径，已计入 M03 的 +30%。 */
@@ -480,7 +578,7 @@ export class MuelsyseCombat {
   }
 
   get copyDurationSeconds(): number {
-    return this.config.copies.durationSeconds;
+    return this.config.copies.durationSeconds * this.durationMultiplier;
   }
 
   /** 远程副本数量。 */
@@ -496,6 +594,26 @@ export class MuelsyseCombat {
       y: copy.y,
       remainingSeconds: Math.max(0, copy.remainingSeconds),
     }));
+  }
+
+  /** E04 召唤物伤害倍率；未拥有时为 1。 */
+  get coreSummonDamageMultiplier(): number {
+    return this.coreSummonDamageMultiplierValue;
+  }
+
+  /** E04 幻影快照；不存在时为 null。 */
+  get corePhantom(): MuelsyseCorePhantomSnapshot | null {
+    const phantom = this.corePhantomValue;
+    if (!phantom) return null;
+    return {
+      x: phantom.x,
+      y: phantom.y,
+      remainingSeconds: Math.max(0, phantom.remainingSeconds),
+    };
+  }
+
+  get corePhantomTimerRemaining(): number {
+    return this.corePhantomTimerSeconds;
   }
 
   /** 波中快照：形态/生命/位置、冷却、副本、控制计时与 M02/M04 进度。 */
@@ -518,6 +636,7 @@ export class MuelsyseCombat {
       nextCopyId: this.nextCopyId,
       rangedAttacksSinceCopy: this.rangedAttacksSinceCopy,
       waterMirrorCooldownRemaining: this.waterMirrorCooldownRemaining,
+      formRelayRemainingSeconds: this.formRelayRemainingSecondsValue,
       healAccumulatorSeconds: this.healAccumulatorSeconds,
       controls: [...this.controls.entries()].map(([targetId, state]) => ({
         targetId,
@@ -525,6 +644,15 @@ export class MuelsyseCombat {
         root: state.root,
         slow: state.slow,
       })),
+      corePhantomTimerSeconds: this.corePhantomTimerSeconds,
+      corePhantom: this.corePhantomValue
+        ? {
+            x: this.corePhantomValue.x,
+            y: this.corePhantomValue.y,
+            remainingSeconds: this.corePhantomValue.remainingSeconds,
+            attackCooldownSeconds: this.corePhantomValue.attackCooldownSeconds,
+          }
+        : null,
     };
   }
 
@@ -560,6 +688,12 @@ export class MuelsyseCombat {
       ? Math.max(0, state.rangedAttacksSinceCopy)
       : 0;
     this.waterMirrorCooldownRemaining = nonNegative(state.waterMirrorCooldownRemaining);
+    // H48 剩余窗口按当前配置的持续时间钳制；旧存档缺省视为 0。
+    const relayRemaining = nonNegative(state.formRelayRemainingSeconds ?? 0);
+    this.formRelayRemainingSecondsValue =
+      this.formRelayDurationSecondsValue > 0
+        ? Math.min(this.formRelayDurationSecondsValue, relayRemaining)
+        : 0;
     this.healAccumulatorSeconds = nonNegative(state.healAccumulatorSeconds);
     this.controls.clear();
     for (const control of state.controls) {
@@ -570,12 +704,118 @@ export class MuelsyseCombat {
         this.controls.set(control.targetId, { stun, root, slow });
       }
     }
+
+    // E04：旧存档没有幻影字段时视为不存在；重新开启计时，避免瞬间再复制。
+    this.corePhantomTimerSeconds = nonNegative(
+      state.corePhantomTimerSeconds ?? E04_PHANTOM_INTERVAL_SECONDS,
+    );
+    const phantom = state.corePhantom;
+    this.corePhantomValue =
+      phantom &&
+      Number.isFinite(phantom.x) &&
+      Number.isFinite(phantom.y) &&
+      nonNegative(phantom.remainingSeconds) > 0
+        ? {
+            x: phantom.x,
+            y: phantom.y,
+            remainingSeconds: nonNegative(phantom.remainingSeconds),
+            attackCooldownSeconds: nonNegative(phantom.attackCooldownSeconds),
+          }
+        : null;
+    if (!this.corePhantomEnabled) this.corePhantomValue = null;
   }
 
   /** 更新 G03 的冷却倍率；只影响之后启动的冷却。 */
   setCooldownMultiplier(multiplier: number): void {
     this.cooldownMultiplier =
       Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /** I15：技能持续时间倍率；只影响之后启动的 L 与之后生成的副本。 */
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /** I19：召唤物伤害加成倍率（1 = 不变），与 E04 分别相乘。 */
+  setSummonDamageMultiplier(multiplier: number): void {
+    this.itemSummonDamageMultiplierValue =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /**
+   * I20：召唤物生命上限倍率。提高上限不回血，降低时把当前生命钳制到新上限。
+   * 非法值按不变处理。
+   */
+  setSummonHealthMultiplier(multiplier: number): void {
+    this.summonHealthMultiplierValue =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+    if (this.health > this.formMaxHealth) this.health = this.formMaxHealth;
+  }
+
+  /** I20：召唤物每秒回复最大生命的比例；0 表示关闭。 */
+  setSummonRegenPercentPerSecond(percent: number): void {
+    this.summonRegenPercentPerSecondValue =
+      Number.isFinite(percent) && percent > 0 ? percent : 0;
+    if (this.summonRegenPercentPerSecondValue <= 0) {
+      this.summonRegenAccumulatorSeconds = 0;
+    }
+  }
+
+  /**
+   * H46 脆弱军团：召唤物伤害倍率与生命上限倍率（1 = 未拥有）。
+   * 降低生命上限时把当前生命钳制到新上限，与 I20 的处理一致。
+   */
+  setTacticianSummonBonuses(
+    damageMultiplier: number,
+    healthMultiplier: number,
+  ): void {
+    this.tacticianSummonDamageMultiplierValue =
+      Number.isFinite(damageMultiplier) && damageMultiplier > 0
+        ? damageMultiplier
+        : 1;
+    this.tacticianSummonHealthMultiplierValue =
+      Number.isFinite(healthMultiplier) && healthMultiplier > 0
+        ? healthMultiplier
+        : 1;
+    if (this.health > this.formMaxHealth) this.health = this.formMaxHealth;
+  }
+
+  /**
+   * H48 形态接力：切换成功后 3 秒内召唤物攻速 +40%。
+   * 比例为 0 或持续时间为 0 时关闭并清空剩余窗口；切换本身仍受 K 冷却约束。
+   */
+  setFormRelay(attackSpeedBonusRatio: number, durationSeconds: number): void {
+    const ratio =
+      Number.isFinite(attackSpeedBonusRatio) && attackSpeedBonusRatio > 0
+        ? attackSpeedBonusRatio
+        : 0;
+    const duration =
+      Number.isFinite(durationSeconds) && durationSeconds > 0
+        ? durationSeconds
+        : 0;
+    this.formRelayBonusRatioValue = ratio;
+    this.formRelayDurationSecondsValue = ratio > 0 ? duration : 0;
+    if (this.formRelayDurationSecondsValue <= 0) {
+      this.formRelayRemainingSecondsValue = 0;
+    }
+  }
+
+  /**
+   * 进入下一波：清空 K/L 剩余冷却并结束浅层非熵适应，
+   * 保证两个技能在下一波开始即可施放。形态、生命与副本保持不变。
+   */
+  resetForWaveStart(): void {
+    this.kCooldownSeconds = 0;
+    this.lCooldownSeconds = 0;
+    this.lRemainingSeconds = 0;
+    this.lActiveThisStep = false;
+    this.nextPullAtSeconds = 0;
+    // H48 的 3 秒窗口是切换后的短时加成，不跨波保留。
+    this.formRelayRemainingSecondsValue = 0;
+    // E04 幻影是 4 秒临时单位，不跨波保留；重新从一开始计时。
+    this.corePhantomValue = null;
+    this.corePhantomTimerSeconds = E04_PHANTOM_INTERVAL_SECONDS;
   }
 
   /**
@@ -617,6 +857,26 @@ export class MuelsyseCombat {
   }
 
   /**
+   * E04 群落意志：所有召唤物（主流形、远程副本、幻影）伤害倍率。
+   * 传入 1 表示未拥有；非法值按 1 处理，不会放大伤害。
+   */
+  setCoreSummonBonus(multiplier: number): void {
+    this.coreSummonDamageMultiplierValue =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /**
+   * E04：开启后主召唤物每 8 秒复制一个持续 4 秒的幻影，同时最多 1 个。
+   * 关闭时立即清除场上幻影；重新开启从头计时，不会在获得瞬间白给一个。
+   */
+  setCorePhantom(enabled: boolean): void {
+    if (this.corePhantomEnabled === enabled) return;
+    this.corePhantomEnabled = enabled;
+    this.corePhantomTimerSeconds = E04_PHANTOM_INTERVAL_SECONDS;
+    if (!enabled) this.corePhantomValue = null;
+  }
+
+  /**
    * M04：玩家 J 命中后由主流形补一次攻击。
    * 只有主流形存活、目标存活且内置冷却就绪时触发；补攻不进入远程分裂计数，
    * 也不会再次触发本方法（不存在递归入口）。
@@ -634,7 +894,11 @@ export class MuelsyseCombat {
     if (this.waterMirrorCooldownRemaining > TIME_EPSILON) return null;
 
     this.waterMirrorCooldownRemaining = this.waterMirrorCooldownSecondsValue;
-    const multiplier = resolveDamageMultiplier(options.damageMultiplier);
+    const multiplier =
+      resolveDamageMultiplier(options.damageMultiplier) *
+      this.coreSummonDamageMultiplierValue *
+      this.itemSummonDamageMultiplierValue *
+      this.tacticianSummonDamageMultiplierValue;
     const event = this.resolveAttack(
       'form',
       null,
@@ -700,7 +964,7 @@ export class MuelsyseCombat {
 
     this.lCooldownSeconds =
       this.config.shallowAdaptation.cooldownSeconds * this.cooldownMultiplier;
-    this.lRemainingSeconds = this.config.shallowAdaptation.durationSeconds;
+    this.lRemainingSeconds = this.shallowAdaptationDurationSeconds;
     this.nextPullAtSeconds = this.config.shallowAdaptation.pullIntervalSeconds;
     // M02 生态复苏：L 开启瞬间立即回复最大生命的一定比例。
     this.healForm(this.formMaxHealth * this.healOnActivatePercentValue);
@@ -708,7 +972,7 @@ export class MuelsyseCombat {
     let refreshedCopies = 0;
     if (this.formType === 'ranged') {
       for (const copy of this.copiesValue) {
-        copy.remainingSeconds = this.config.copies.durationSeconds;
+        copy.remainingSeconds = this.copyDurationSeconds;
         refreshedCopies += 1;
       }
     }
@@ -775,6 +1039,8 @@ export class MuelsyseCombat {
     this.kCooldownSeconds =
       this.config.switchCooldownSeconds * this.cooldownMultiplier;
     this.attackCooldownSeconds = 0;
+    // H48 形态接力：切换成功后开启 3 秒召唤物攻速窗口；重建不触发。
+    this.formRelayRemainingSecondsValue = this.formRelayDurationSecondsValue;
 
     return {
       action: 'switch',
@@ -812,6 +1078,7 @@ export class MuelsyseCombat {
     if (died) {
       this.clearSummons();
       this.healAccumulatorSeconds = 0;
+      this.summonRegenAccumulatorSeconds = 0;
     }
     return {
       applied: true,
@@ -838,6 +1105,7 @@ export class MuelsyseCombat {
         teleported: false,
         moved: false,
         formHealed: 0,
+        spawnedCorePhantom: false,
       };
     }
 
@@ -851,7 +1119,14 @@ export class MuelsyseCombat {
     // 本步开始时 L 仍生效；最后一步（剩余归零）也要结算触发点。
     this.lActiveThisStep = this.lRemainingSeconds > TIME_EPSILON;
     this.lRemainingSeconds = decay(this.lRemainingSeconds, stepSeconds);
+    // H48 形态接力：攻速加成窗口按逻辑步衰减。
+    this.formRelayRemainingSecondsValue = decay(
+      this.formRelayRemainingSecondsValue,
+      stepSeconds,
+    );
     if (!this.isFormAlive) {
+      // 主召唤物不存在时，E04 幻影一并消失，避免留下无主攻击单位。
+      this.corePhantomValue = null;
       return {
         attacks: [],
         pulls: [],
@@ -859,13 +1134,19 @@ export class MuelsyseCombat {
         teleported: false,
         moved: false,
         formHealed: 0,
+        spawnedCorePhantom: false,
       };
     }
 
     // M02 生态复苏：按整秒结算，逻辑步长变化不改变每秒回复节奏。
-    const formHealed = this.stepEcologicalRecovery(stepSeconds);
+    const formHealed =
+      this.stepEcologicalRecovery(stepSeconds) + this.stepItemSummonRegen(stepSeconds);
     const teleported = this.updateFollow(stepSeconds, context.player);
-    const multiplier = resolveDamageMultiplier(context.damageMultiplier);
+    const multiplier =
+      resolveDamageMultiplier(context.damageMultiplier) *
+      this.coreSummonDamageMultiplierValue *
+      this.itemSummonDamageMultiplierValue *
+      this.tacticianSummonDamageMultiplierValue;
     this.attackCooldownSeconds = decay(this.attackCooldownSeconds, stepSeconds);
 
     const attacks: MuelsyseAttackEvent[] = [];
@@ -895,7 +1176,9 @@ export class MuelsyseCombat {
             this.stacks + 1,
           );
         }
-        this.attackCooldownSeconds = this.formConfig.attackIntervalSeconds;
+        this.attackCooldownSeconds = this.attackIntervalFor(
+          this.formConfig.attackIntervalSeconds,
+        );
 
         if (this.formType === 'ranged') {
           this.rangedAttacksSinceCopy += 1;
@@ -937,12 +1220,69 @@ export class MuelsyseCombat {
               context,
             ),
           );
-          copy.attackCooldownSeconds = this.config.ranged.attackIntervalSeconds;
+          copy.attackCooldownSeconds = this.attackIntervalFor(
+            this.config.ranged.attackIntervalSeconds,
+          );
         }
       }
       survivingCopies.push(copy);
     }
     this.copiesValue = survivingCopies;
+
+    // E04：主召唤物每 8 秒复制一个 4 秒、30% 伤害的幻影，同时最多 1 个。
+    // 幻影继承当前形态的射程/间隔与伤害类型，但不累计近战窃取层数。
+    let spawnedCorePhantom = false;
+    if (this.corePhantomEnabled) {
+      this.corePhantomTimerSeconds = decay(
+        this.corePhantomTimerSeconds,
+        stepSeconds,
+      );
+      if (this.corePhantomTimerSeconds <= TIME_EPSILON) {
+        this.corePhantomTimerSeconds = E04_PHANTOM_INTERVAL_SECONDS;
+        if (E04_MAX_PHANTOMS > 0) {
+          this.spawnCorePhantom();
+          spawnedCorePhantom = true;
+        }
+      }
+
+      const phantom = this.corePhantomValue;
+      if (phantom) {
+        phantom.remainingSeconds = decay(phantom.remainingSeconds, stepSeconds);
+        if (phantom.remainingSeconds <= TIME_EPSILON) {
+          this.corePhantomValue = null;
+        } else {
+          phantom.attackCooldownSeconds = decay(
+            phantom.attackCooldownSeconds,
+            stepSeconds,
+          );
+          if (phantom.attackCooldownSeconds <= TIME_EPSILON) {
+            const target = this.selectTargetFrom(
+              phantom.x,
+              phantom.y,
+              this.attackRange,
+              context.targets,
+            );
+            if (target) {
+              attacks.push(
+                this.resolveAttack(
+                  'copy',
+                  'core-phantom',
+                  phantom.x,
+                  phantom.y,
+                  target,
+                  this.formDamage * E04_PHANTOM_DAMAGE_RATIO * multiplier,
+                  this.attackDamageType,
+                  context,
+                ),
+              );
+              phantom.attackCooldownSeconds = this.attackIntervalFor(
+                this.formConfig.attackIntervalSeconds,
+              );
+            }
+          }
+        }
+      }
+    }
 
     // 近战 L：每 2 秒把半径内普通敌人拉向主流形并眩晕；Boss 只转减速。
     const pulls =
@@ -957,6 +1297,7 @@ export class MuelsyseCombat {
       teleported,
       moved: this.lastMoved,
       formHealed,
+      spawnedCorePhantom,
     };
   }
 
@@ -1002,13 +1343,15 @@ export class MuelsyseCombat {
   /** 近战 L 的一次批量拉拽：半径 100 内普通敌人拉近 35 并眩晕 0.5 秒。 */
   private resolveMeleePulls(context: MuelsyseStepContext): MuelsysePullEvent[] {
     const config = this.config.shallowAdaptation;
-    const elapsed = config.durationSeconds - this.lRemainingSeconds;
+    const elapsed = this.shallowAdaptationDurationSeconds - this.lRemainingSeconds;
     if (elapsed + TIME_EPSILON < this.nextPullAtSeconds) return [];
 
     const pulls: MuelsysePullEvent[] = [];
     const radiusSquared = this.meleePullRadius * this.meleePullRadius;
     for (const target of context.targets) {
       if (!target.isAlive) continue;
+      // 宝箱不是敌人：不参与拉拽/眩晕等控制。
+      if (target.kind === 'chest') continue;
       if (distanceSquared({ x: this.x, y: this.y }, target) > radiusSquared + TIME_EPSILON) {
         continue;
       }
@@ -1048,10 +1391,21 @@ export class MuelsyseCombat {
       slot,
       x: point.x,
       y: point.y,
-      remainingSeconds: this.config.copies.durationSeconds,
+      remainingSeconds: this.copyDurationSeconds,
       attackCooldownSeconds: 0,
     });
     this.nextCopyId += 1;
+  }
+
+  /** E04 幻影：复用副本的避墙站位，寿命与伤害比例由核心参数决定。 */
+  private spawnCorePhantom(): void {
+    const point = this.resolveCopyPoint();
+    this.corePhantomValue = {
+      x: point.x,
+      y: point.y,
+      remainingSeconds: E04_PHANTOM_DURATION_SECONDS,
+      attackCooldownSeconds: 0,
+    };
   }
 
   /** 副本生成点：主流形周围 40 像素内避开障碍与已有副本的空位。 */
@@ -1152,6 +1506,20 @@ export class MuelsyseCombat {
     return healed;
   }
 
+  /** I20 共生苔藓：召唤物每满 1 秒回复最大生命的 1%×层数。 */
+  private stepItemSummonRegen(stepSeconds: number): number {
+    if (this.summonRegenPercentPerSecondValue <= 0) return 0;
+    this.summonRegenAccumulatorSeconds += stepSeconds;
+    let healed = 0;
+    while (this.summonRegenAccumulatorSeconds + TIME_EPSILON >= 1) {
+      this.summonRegenAccumulatorSeconds -= 1;
+      healed += this.healForm(
+        this.formMaxHealth * this.summonRegenPercentPerSecondValue,
+      );
+    }
+    return healed;
+  }
+
   /** 主流形回复生命，不超过上限；死亡时不结算。 */
   private healForm(amount: number): number {
     if (!(amount > 0) || !Number.isFinite(amount) || !this.isFormAlive) return 0;
@@ -1162,6 +1530,12 @@ export class MuelsyseCombat {
 
   private get formConfig(): MuelsyseFormConfig {
     return this.formType === 'melee' ? this.config.melee : this.config.ranged;
+  }
+
+  /** 一次攻击的冷却间隔：H48 窗口内按攻速加成缩短。 */
+  private attackIntervalFor(baseSeconds: number): number {
+    const speed = this.attackSpeedMultiplier;
+    return speed > 1 ? baseSeconds / speed : baseSeconds;
   }
 
   private lastMoved = false;
@@ -1261,21 +1635,26 @@ export class MuelsyseCombat {
     const rangeSquared = range * range;
     let best: Combatant | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
+    let bestPriority = Number.POSITIVE_INFINITY;
 
     for (const target of targets) {
       if (!target.isAlive) continue;
       const distance = distanceSquared({ x, y }, target);
       if (distance > rangeSquared + TIME_EPSILON) continue;
       if (!hasLineOfSight(this.layout, { x, y }, target)) continue;
-      // 等距时按 id 升序，保证同一局面下选择可复现。
+      // 默认敌人优先于宝箱；同类别才按距离排序，等距再按 id 保证可复现。
+      const priority = targetKindPriority(target);
       if (
-        distance < bestDistance - TIME_EPSILON ||
-        (Math.abs(distance - bestDistance) <= TIME_EPSILON &&
-          best !== null &&
-          target.id < best.id)
+        priority < bestPriority ||
+        (priority === bestPriority &&
+          (distance < bestDistance - TIME_EPSILON ||
+            (Math.abs(distance - bestDistance) <= TIME_EPSILON &&
+              best !== null &&
+              target.id < best.id)))
       ) {
         best = target;
         bestDistance = distance;
+        bestPriority = priority;
       }
     }
     return best;

@@ -8,6 +8,7 @@ import {
   WAVE_COUNTDOWN_SECONDS,
   WAVE_STALE_HINT_SECONDS,
   applyIntermissionRecovery,
+  canCastCombatSkills,
   formatIntermissionSummary,
   intermissionHealAmount,
   resolvePostDamagePhase,
@@ -125,6 +126,43 @@ describe('波间补给', () => {
     expect(health.deathCount).toBe(1);
   });
 
+  it('恢复量按当前最大生命计算，最大生命变化本身不回血', () => {
+    const health = new HealthState({ maxHealth: 100 });
+    health.applyDamage(60, 'true');
+    expect(health.health).toBe(40);
+
+    // 提升上限不立即回血；下一次波间恢复按新的上限计算 15%。
+    health.increaseMaxHealth(20);
+    expect(health.maxHealth).toBe(120);
+    expect(health.health).toBe(40);
+    expect(applyIntermissionRecovery(health)).toBeCloseTo(18, 10);
+    expect(health.health).toBeCloseTo(58, 10);
+
+    // 降低上限只钳制当前生命，不产生治疗。
+    health.setMaxHealth(50);
+    expect(health.maxHealth).toBe(50);
+    expect(health.health).toBeCloseTo(50, 10);
+    expect(applyIntermissionRecovery(health)).toBe(0);
+    expect(health.health).toBeCloseTo(50, 10);
+  });
+
+  it('R06 命运交易所使波后恢复减半，面板显示实际比例', () => {
+    const health = new HealthState({ maxHealth: 100 });
+    health.applyDamage(50, 'true');
+    // 15% × 0.5 = 7.5%，向下受钳制不影响本断言。
+    expect(applyIntermissionRecovery(health, INTERMISSION_HEAL_RATIO * 0.5)).toBe(7.5);
+    expect(health.health).toBe(57.5);
+
+    const text = formatIntermissionSummary({
+      wave: 2,
+      health: 57.5,
+      maxHealth: 100,
+      upgrades: [],
+      healRatio: INTERMISSION_HEAL_RATIO * 0.5,
+    });
+    expect(text).toContain('回复最大生命的 7.5%');
+  });
+
   it('波间面板显示波次、生命、强化概览与 Enter 提示', () => {
     const text = formatIntermissionSummary({
       wave: 4,
@@ -145,6 +183,24 @@ describe('波间补给', () => {
     expect(
       formatIntermissionSummary({ wave: 1, health: 100, maxHealth: 100, upgrades: [] }),
     ).toContain('强化：暂无');
+  });
+});
+
+describe('施法门禁', () => {
+  it('只有战斗阶段可以施放技能；倒计时、奖励、商店与结算都不能施法', () => {
+    expect(canCastCombatSkills('combat')).toBe(true);
+    const blocked: Parameters<typeof canCastCombatSkills>[0][] = [
+      'menu',
+      'character-select',
+      'countdown',
+      'upgrade',
+      'intermission',
+      'paused',
+      'result',
+    ];
+    for (const phase of blocked) {
+      expect(canCastCombatSkills(phase)).toBe(false);
+    }
   });
 });
 
@@ -269,5 +325,59 @@ describe('场景接入', () => {
     expect(death).toBeGreaterThan(-1);
     expect(progression).toBeGreaterThan(death);
     expect(wave).toBeGreaterThan(death);
+  });
+
+  it('波初清空上一波冷却：进入下一波前统一重置技能与闪避', () => {
+    const start = scene.indexOf('private startWave(');
+    const end = scene.indexOf('private resetWaveReadyState(');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const body = scene.slice(start, end);
+    expect(body).toContain('this.resetWaveReadyState();');
+
+    const resetStart = end;
+    const resetEnd = scene.indexOf('private stepCountdown(');
+    expect(resetEnd).toBeGreaterThan(resetStart);
+    const resetBody = scene.slice(resetStart, resetEnd);
+    for (const call of [
+      'this.motion.resetDodgeForWaveStart()',
+      'this.soul?.resetForWaveStart()',
+      'this.burst?.resetForWaveStart()',
+      'this.amiya?.resetForWaveStart()',
+      'this.saria?.resetForWaveStart()',
+      'this.muelsyse?.resetForWaveStart()',
+    ]) {
+      expect(resetBody).toContain(call);
+    }
+  });
+
+  it('波末恢复位于完成金币之后、奖励队列建立之前', () => {
+    const start = scene.indexOf('private beginWaveClear(');
+    const end = scene.indexOf('private waveRewardEligibility(');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const body = scene.slice(start, end);
+    const gold = body.indexOf('awardWaveCompletion');
+    const heal = body.indexOf('applyIntermissionRecovery');
+    const queue = body.indexOf('completeAbsorb');
+    expect(gold).toBeGreaterThan(-1);
+    expect(heal).toBeGreaterThan(gold);
+    expect(queue).toBeGreaterThan(heal);
+  });
+
+  it('战斗输入在施法门禁之后才解析，商店与奖励面板内不能施法', () => {
+    const start = scene.indexOf('private handleKeyDown(');
+    const end = scene.indexOf('private handleKeyUp(');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const body = scene.slice(start, end);
+    const gate = body.indexOf('canCastCombatSkills(this.runState.phase)');
+    const action = body.indexOf('combatBindingActionForKeyCode');
+    expect(gate).toBeGreaterThan(-1);
+    expect(action).toBeGreaterThan(gate);
+    expect(body).toContain('this.isRewardActive()');
   });
 });

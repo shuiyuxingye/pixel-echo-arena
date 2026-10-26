@@ -38,6 +38,15 @@ export type RunPhase =
 
 export type RunOutcome = 'victory' | 'defeat';
 
+/**
+ * 只有战斗阶段响应技能、攻击与闪避输入。
+ * 倒计时不抢跑，波末奖励面板与商店（intermission）内不施法，
+ * 暂停/结算/菜单同样不接收战斗输入。
+ */
+export function canCastCombatSkills(phase: RunPhase): boolean {
+  return phase === 'combat';
+}
+
 /** 状态机只允许合法阶段迁移；非法调用原样返回当前阶段。 */
 export class RunStateMachine {
   private phaseValue: RunPhase = 'menu';
@@ -288,6 +297,8 @@ export interface IntermissionSummaryInput {
   readonly health: number;
   readonly maxHealth: number;
   readonly upgrades: readonly IntermissionUpgradeSummary[];
+  /** 本局实际恢复比例（R06 命运交易所减半时传 0.075）；缺省 15%。 */
+  readonly healRatio?: number;
 }
 
 /** 波间补给面板：波次、生命与强化概览，Enter 进入下一波。 */
@@ -296,6 +307,12 @@ export function formatIntermissionSummary(
 ): string {
   const health = Math.max(0, input.health);
   const maxHealth = Math.max(1, input.maxHealth);
+  const healRatio =
+    typeof input.healRatio === 'number' &&
+    Number.isFinite(input.healRatio) &&
+    input.healRatio >= 0
+      ? input.healRatio
+      : INTERMISSION_HEAL_RATIO;
   const upgradeText =
     input.upgrades.length > 0
       ? input.upgrades
@@ -306,7 +323,7 @@ export function formatIntermissionSummary(
   return [
     `第 ${input.wave} 波清空 · 生命 ${Math.ceil(health)}/${Math.ceil(maxHealth)}`,
     `强化：${upgradeText}`,
-    `波间补给：回复最大生命的 ${Math.round(INTERMISSION_HEAL_RATIO * 100)}%`,
+    `波间补给：回复最大生命的 ${Math.round(healRatio * 1000) / 10}%`,
     '按 Enter 进入下一波',
   ].join('\n');
 }

@@ -1,6 +1,6 @@
 /** 视口、场地与资源键的集中配置。纯数据模块，不依赖 Phaser，可在 Node 测试中导入。 */
 
-import { PLAYER_ART } from './player-art';
+import { PLAYER_COLLISION_RADIUS } from './player-art';
 
 export const VIEWPORT = {
   width: 960,
@@ -27,32 +27,24 @@ export const ASSET_KEYS = {
 } as const;
 
 export const ASSET_PATHS = {
-  floor: '/assets/arena/floor.png',
-  wall: '/assets/arena/wall.png',
-  cover: '/assets/arena/cover.png',
-  playerVishdal: '/assets/sprites/player-vishdal.png',
-  playerAmiya: '/assets/sprites/player-amiya.png',
-  playerSaria: '/assets/sprites/player-saria.png',
-  playerMuelsyse: '/assets/sprites/player-muelsyse.png',
+  floor: '/assets/art/arena.png',
+  wall: '/assets/art/wall.png',
+  cover: '/assets/art/cover.png',
+  playerVishdal: '/assets/art/hero-vishdal.png',
+  playerAmiya: '/assets/art/hero-amiya.png',
+  playerSaria: '/assets/art/hero-saria.png',
+  playerMuelsyse: '/assets/art/hero-muelsyse.png',
 } as const;
 
 export type AssetKey = (typeof ASSET_KEYS)[keyof typeof ASSET_KEYS];
 
 export const PLAYER = {
   /** 逻辑碰撞半径固定 12，不随 Q 版大头轮廓扩大。 */
-  radius: PLAYER_ART.collisionRadius,
-  frameWidth: PLAYER_ART.frameWidth,
-  frameHeight: PLAYER_ART.frameHeight,
-  originX: PLAYER_ART.originX,
-  originY: PLAYER_ART.originY,
-  bodyOffsetX: PLAYER_ART.bodyOffsetX,
-  bodyOffsetY: PLAYER_ART.bodyOffsetY,
+  radius: PLAYER_COLLISION_RADIUS,
   /**
    * 碰撞圆圆心相对精灵锚点（脚底）的纵向偏移。
    * 圆心在脚底上方 12 像素，绘制时精灵 y = 碰撞圆心 y - bodyCenterOffsetY。
+   * 帧尺寸与显示缩放变化时该值不变，因此 96×96 样板沿用同一套位置逻辑。
    */
-  bodyCenterOffsetY:
-    PLAYER_ART.bodyOffsetY +
-    PLAYER_ART.collisionRadius -
-    PLAYER_ART.originY * PLAYER_ART.frameHeight,
+  bodyCenterOffsetY: -PLAYER_COLLISION_RADIUS,
 } as const;

@@ -60,21 +60,21 @@ function combatant(id: string, x: number, y: number): Combatant {
 describe('塞雷娅基础数值', () => {
   it('使用已确认的生命、护甲、法抗与移速', () => {
     expect(SARIA).toMatchObject({
-      maxHealth: 180,
+      maxHealth: 200,
       armor: 35,
       magicResist: 0.1,
-      moveSpeed: 140,
+      moveSpeed: 150,
       radius: 12,
     });
   });
 
-  it('J 盾击每 0.55 秒、70 距离、100° 扇区、26 物伤、击退 12', () => {
+  it('J 盾击每 0.55 秒、82 距离、110° 扇区、26 物伤、击退 12', () => {
     expect(SARIA.attack).toMatchObject({
       intervalSeconds: 0.55,
-      range: 70,
+      range: 82,
       damage: 26,
       damageType: 'physical',
-      arcDegrees: 100,
+      arcDegrees: 110,
       knockback: 12,
     });
 
@@ -90,9 +90,9 @@ describe('塞雷娅基础数值', () => {
 
 describe('塞雷娅 J 盾击扇区', () => {
   const origin = { x: 100, y: 100 };
-  const halfAngle = 50 * (Math.PI / 180);
+  const halfAngle = 55 * (Math.PI / 180);
 
-  it('只命中面前 100° 扇区内、射程内的存活目标', () => {
+  it('只命中面前 110° 扇区内、射程内的存活目标', () => {
     const inside = combatant('inside', origin.x + 60, origin.y);
     const edgeAngle = combatant(
       'edge-angle',
@@ -105,7 +105,7 @@ describe('塞雷娅 J 盾击扇区', () => {
       origin.y + 60 * Math.sin(halfAngle + 0.01),
     );
     const behind = combatant('behind', origin.x - 40, origin.y);
-    const outOfRange = combatant('out-range', origin.x + 71, origin.y);
+    const outOfRange = combatant('out-range', origin.x + 83, origin.y);
     const dead = combatant('dead', origin.x + 30, origin.y);
     dead.applyDamage(1000, 'true');
 
@@ -160,7 +160,7 @@ describe('塞雷娅 J 盾击扇区', () => {
   it('EnemySystem.knockback 沿远离玩家的方向位移并受阻挡约束', () => {
     const layout = createArenaLayout();
     const enemies = new EnemySystem({ layout });
-    const enemy = enemies.addEnemy(getEnemy('chaser'), 770, 480);
+    const enemy = enemies.addEnemy(getEnemy('blob'), 770, 480);
     const moved = enemies.knockback(enemy.id, { x: 720, y: 480 }, 12);
 
     expect(moved).toBeCloseTo(12, 6);
@@ -174,12 +174,12 @@ describe('塞雷娅 K 急救配置', () => {
     const combat = createSariaCombat();
     const health = createHealth();
     health.applyDamage(60, 'true');
-    expect(health.health).toBe(120);
+    expect(health.health).toBe(SARIA.maxHealth - 60);
 
     const result = combat.tryActivateK(health);
     expect(result).not.toBeNull();
     expect(result?.healed).toBeCloseTo(40, 10);
-    expect(health.health).toBeCloseTo(160, 10);
+    expect(health.health).toBeCloseTo(SARIA.maxHealth - 20, 10);
     expect(result?.shield).toBe(25);
     expect(health.shield).toBe(25);
     expect(combat.shieldRemaining).toBeCloseTo(4, 10);
@@ -195,14 +195,14 @@ describe('塞雷娅 K 急救配置', () => {
 
     const result = combat.tryActivateK(health);
     expect(result?.healed).toBeCloseTo(5, 10);
-    expect(health.health).toBe(180);
+    expect(health.health).toBe(SARIA.maxHealth);
     // 只恢复到上限也属于实际治疗，因此会触发一次精神回复。
     expect(combat.lCooldownRemaining).toBeCloseTo(26, 10);
     expect(combat.passiveTriggerCount).toBe(1);
 
     const fullCombat = createSariaCombat();
     const fullHealth = createHealth();
-    expect(fullHealth.health).toBe(180);
+    expect(fullHealth.health).toBe(SARIA.maxHealth);
     const fullResult = fullCombat.tryActivateK(fullHealth);
     expect(fullResult?.healed).toBe(0);
     expect(fullResult?.passiveTriggered).toBe(false);
@@ -343,6 +343,23 @@ describe('塞雷娅 L 冷却骨架与强化冷却', () => {
     expect(combat.lCooldownRemaining).toBeCloseTo(16.8, 6);
     expect(combat.reduceLCooldown(2, 16.8)).toBe(0);
   });
+
+  it('进入下一波清空 K/L 冷却并结束领域，两个技能立即就绪', () => {
+    const combat = createSariaCombat();
+    const health = createHealth();
+    combat.tryActivateK(health);
+    combat.tryActivateL();
+    expect(combat.isCalciumFieldActive).toBe(true);
+    expect(combat.kCooldownRemaining).toBeGreaterThan(0);
+    expect(combat.lCooldownRemaining).toBeGreaterThan(0);
+
+    combat.resetForWaveStart();
+    expect(combat.kCooldownRemaining).toBe(0);
+    expect(combat.lCooldownRemaining).toBe(0);
+    expect(combat.isCalciumFieldActive).toBe(false);
+    expect(combat.tryActivateK(health)).not.toBeNull();
+    expect(combat.tryActivateL()).toBe(true);
+  });
 });
 
 describe('塞雷娅 L 钙质化领域', () => {
@@ -381,22 +398,23 @@ describe('塞雷娅 L 钙质化领域', () => {
     const combat = createSariaCombat();
     const health = createHealth();
     health.applyDamage(100, 'true');
-    expect(health.health).toBe(80);
+    const afterDamage = SARIA.maxHealth - 100;
+    expect(health.health).toBe(afterDamage);
 
     expect(combat.tryActivateL()).toBe(true);
     advance(combat, 1, health);
-    expect(health.health).toBeCloseTo(88, 6);
+    expect(health.health).toBeCloseTo(afterDamage + 8, 6);
 
     advance(combat, 3, health);
-    expect(health.health).toBeCloseTo(112, 6);
+    expect(health.health).toBeCloseTo(afterDamage + 32, 6);
 
     advance(combat, 4, health);
     expect(combat.isCalciumFieldActive).toBe(false);
-    expect(health.health).toBeCloseTo(144, 6);
+    expect(health.health).toBeCloseTo(afterDamage + 64, 6);
 
     // 效果结束后不再治疗。
     advance(combat, 1, health);
-    expect(health.health).toBeCloseTo(144, 6);
+    expect(health.health).toBeCloseTo(afterDamage + 64, 6);
   });
 
   it('领域内治疗不超过生命上限，死亡时不再回复', () => {
@@ -405,7 +423,7 @@ describe('塞雷娅 L 钙质化领域', () => {
     health.applyDamage(5, 'true');
     combat.tryActivateL();
     advance(combat, 2, health);
-    expect(health.health).toBe(180);
+    expect(health.health).toBe(SARIA.maxHealth);
 
     const deadCombat = createSariaCombat();
     const deadHealth = createHealth();
@@ -478,5 +496,18 @@ describe('塞雷娅场景接入', () => {
     expect(sceneSource).toContain('syncHealthHud');
     expect(sceneSource).toContain('saria.step');
     expect(sceneSource).toContain("'saria'");
+  });
+});
+
+describe('I15 技能持续时间倍率', () => {
+  it('只延长钙质化领域持续时间', () => {
+    const combat = createSariaCombat();
+    const base = SARIA.skillL.durationSeconds ?? 0;
+    combat.setDurationMultiplier(1.15);
+    expect(combat.tryActivateL()).toBe(true);
+    advance(combat, base * 1.1);
+    expect(combat.isCalciumFieldActive).toBe(true);
+    advance(combat, base * 0.1);
+    expect(combat.isCalciumFieldActive).toBe(false);
   });
 });

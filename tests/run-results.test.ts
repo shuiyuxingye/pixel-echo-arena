@@ -152,7 +152,7 @@ describe('成绩字段', () => {
     const line = formatRunRecordLine(validRecord());
     expect(line).toContain('第 9 波');
     expect(line).toContain('胜利');
-    expect(line).toContain('维什戴尔');
+    expect(line).toContain('爆破手');
     expect(line).toContain('6:52');
     expect(line).toContain('击杀 57');
     expect(line).toContain('伤害 2140');
@@ -260,9 +260,16 @@ describe('失败后统计冻结', () => {
     expect(scene).toContain('publishRunResult(');
 
     // 击杀数、伤害与经验球 spawn 都在统计守卫内，失败后不再增长。
+    // 按方法体边界取块（到下一个成员声明为止），避免方法增长后固定窗口截断。
     const damageStart = scene.indexOf('private showDamageResult');
-    const damageBlock = scene.slice(damageStart, damageStart + 1800);
     expect(damageStart).toBeGreaterThan(-1);
+    const damageEnd = scene
+      .slice(damageStart + 1)
+      .search(/\n {2}(?:private|public|protected|override) /);
+    const damageBlock = scene.slice(
+      damageStart,
+      damageEnd === -1 ? undefined : damageStart + 1 + damageEnd,
+    );
     expect(damageBlock).toContain('if (countStats) {');
     expect(damageBlock.indexOf('spawnXpOrb')).toBeGreaterThan(
       damageBlock.indexOf('if (countStats) {'),
@@ -297,9 +304,9 @@ describe('结算面板键盘导航', () => {
     expect(document.querySelector<HTMLElement>('#result-overlay')?.hidden).toBe(false);
     expect(focusedId()).toBe('result-restart');
     expect(text('result-title')).toBe('试炼完成');
-    expect(text('result-subtitle')).toContain('维什戴尔');
+    expect(text('result-subtitle')).toContain('爆破手');
     expect(text('result-subtitle')).toContain('第 9 波');
-    expect(text('result-stats')).toContain('维什戴尔');
+    expect(text('result-stats')).toContain('爆破手');
     expect(text('result-stats')).toContain('6:52');
     expect(text('result-stats')).toContain('57');
     expect(text('result-stats')).toContain('2140');
@@ -358,13 +365,13 @@ describe('结算面板键盘导航', () => {
     expect(view?.hidden).toBe(false);
     expect(document.querySelectorAll('.result-record')).toHaveLength(2);
     const firstItem = document.querySelector<HTMLElement>('.result-record');
-    expect(firstItem?.textContent).toContain('维什戴尔');
+    expect(firstItem?.textContent).toContain('爆破手');
     expect(firstItem?.classList.contains('is-focused')).toBe(true);
 
     pressDown(1);
     const items = document.querySelectorAll<HTMLElement>('.result-record');
     expect(items[1]?.classList.contains('is-focused')).toBe(true);
-    expect(items[1]?.textContent).toContain('塞雷娅');
+    expect(items[1]?.textContent).toContain('骑士');
 
     press('Escape');
     expect(view?.hidden).toBe(true);

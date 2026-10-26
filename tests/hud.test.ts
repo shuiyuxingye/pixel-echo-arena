@@ -25,7 +25,10 @@ import {
   HUD_VIEWPORTS,
   applyHudEvent,
   buildHudModel,
+  computeHudFreeSkillBarLayout,
   computeHudSkillBarLayout,
+  freeSkillStatusText,
+  hudFreeSkillIcon,
   computeHudViewport,
   createHudState,
   estimateHudTextWidth,
@@ -182,6 +185,26 @@ describe('HUD 三档视口布局', () => {
     }
   });
 
+  it('U/I 自由技能两槽位于主技能条上方且不越界', () => {
+    const layout = computeHudFreeSkillBarLayout();
+    for (const key of ['U', 'I'] as const) {
+      const rect = layout.slots[key];
+      expect(rect.x).toBeGreaterThanOrEqual(16);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(HUD_DESIGN.width - 16);
+      expect(rect.y).toBeGreaterThanOrEqual(0);
+      expect(rect.y + rect.height).toBeLessThan(
+        computeHudSkillBarLayout().y,
+      );
+    }
+    expect(layout.slots.U.x + layout.slots.U.width).toBeLessThan(
+      layout.slots.I.x,
+    );
+    expect(freeSkillStatusText(true, 0)).toBe('空槽 · 商店装备');
+    expect(freeSkillStatusText(false, 4)).toBe('冷却 4.0s');
+    expect(hudFreeSkillIcon('S06').shape).toBe('wave');
+    expect(hudFreeSkillIcon('S07').shape).toBe('shield');
+  });
+
   it('文本宽度估算把 CJK 当全角、ASCII 当半角', () => {
     expect(estimateHudTextWidth('生命', 14)).toBeCloseTo(28, 6);
     expect(estimateHudTextWidth('ab', 14)).toBeCloseTo(16.8, 6);
@@ -232,6 +255,7 @@ describe('HUD 字段与事件映射', () => {
       type: 'target',
       target: { label: '重装者', health: 100.2, maxHealth: 160 },
     });
+    state = applyHudEvent(state, { type: 'gold', gold: 92 });
     const model = buildHudModel(state);
     const byId = new Map(model.fields.map((field) => [field.id, field]));
 
@@ -242,9 +266,57 @@ describe('HUD 字段与事件映射', () => {
     expect(byId.get('experience')?.text).toBe('经验 70/80');
     expect(byId.get('wave')?.text).toBe('波次 第 5 波');
     expect(byId.get('kills')?.text).toBe('击杀 7');
+    expect(byId.get('gold')?.text).toBe('金币 92');
     expect(byId.get('target')?.text).toBe('目标 重装者 101/160');
     expect(model.lines.vitals).toBe('生命 124/180 · 护盾 26（3.2s）');
     expect(model.lines.wave).toBe('波次 第 5 波 · 存活敌人 4');
+    expect(model.lines.gold).toBe('金币 92');
+  });
+
+  it('新局初始金币 40，负值不会写入', () => {
+    let state = createHudState('vishdal');
+    expect(state.gold).toBe(40);
+    expect(buildHudModel(state).lines.gold).toBe('金币 40');
+
+    state = applyHudEvent(state, { type: 'gold', gold: -5 });
+    expect(state.gold).toBe(0);
+  });
+
+  it('波次行显示倒计时剩余秒数，Boss 波显示无时限', () => {
+    let state = applyHudEvent(createHudState('vishdal'), {
+      type: 'wave',
+      wave: 9,
+      kills: 3,
+      aliveEnemies: 12,
+      remainingSeconds: 24.2,
+      unlimited: false,
+    });
+    expect(buildHudModel(state).lines.wave).toBe(
+      '波次 第 9 波 · 存活敌人 12 · 剩余 25s',
+    );
+
+    state = applyHudEvent(state, {
+      type: 'wave',
+      wave: 18,
+      kills: 3,
+      aliveEnemies: 1,
+      remainingSeconds: null,
+      unlimited: true,
+    });
+    expect(buildHudModel(state).lines.wave).toBe(
+      '波次 第 18 波 · 存活敌人 1 · Boss · 无时限',
+    );
+
+    // 离开波次后清空计时信息。
+    state = applyHudEvent(state, {
+      type: 'wave',
+      wave: 18,
+      kills: 3,
+      aliveEnemies: 0,
+      remainingSeconds: null,
+      unlimited: false,
+    });
+    expect(buildHudModel(state).lines.wave).toBe('波次 第 18 波 · 存活敌人 0');
   });
 
   it('满级经验显示“满级”，不会把 Infinity 当成 0', () => {
@@ -410,7 +482,7 @@ describe('HUD 字段与事件映射', () => {
       shieldRemaining: 0,
     });
     expect(next).not.toBe(original);
-    expect(original.health).toBe(100);
+    expect(original.health).toBe(original.maxHealth);
     expect(next.health).toBe(50);
     expect(next.skills).toBe(original.skills);
   });

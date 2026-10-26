@@ -71,6 +71,7 @@ export function characterEffectColors(characterId: string): CharacterEffectColor
 
 /** 敌方攻击统一暖红警戒纹理（§8）。 */
 export const ENEMY_WARNING = {
+  // 纯暖红：green 与 blue 相等（0x3b），判定暖色只看红色分量是否占主导。
   fill: 0xff3b3b,
   stroke: 0xff8a5c,
   core: 0xff7a4d,

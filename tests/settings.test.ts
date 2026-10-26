@@ -16,6 +16,7 @@ import {
   createSettingsStore,
   findKeyBindingConflict,
   isBindableKeyCode,
+  isKeyBoundToCombatAction,
   keyCodeLabel,
   loadUserSettings,
   movementBindingActionForKeyCode,
@@ -31,7 +32,7 @@ afterEach(() => {
 });
 
 describe('键位重绑规则', () => {
-  it('默认覆盖移动、攻击、两个技能、闪避与切换目标', () => {
+  it('默认覆盖移动、攻击、四个技能、闪避与切换目标', () => {
     expect(KEY_BINDING_ACTIONS).toEqual(Object.keys(DEFAULT_KEY_BINDINGS));
     expect(DEFAULT_KEY_BINDINGS).toEqual({
       moveUp: 'KeyW',
@@ -41,6 +42,8 @@ describe('键位重绑规则', () => {
       attack: 'KeyJ',
       skillK: 'KeyK',
       skillL: 'KeyL',
+      skillU: 'KeyU',
+      skillI: 'KeyI',
       dodge: 'Space',
       cycleTarget: 'Tab',
     });
@@ -102,6 +105,13 @@ describe('键位重绑规则', () => {
     expect(combatBindingActionForKeyCode(bindings, 'KeyZ')).toBeNull();
   });
 
+  it('界面快捷键的冲突判定与战斗绑定解析一致', () => {
+    expect(isKeyBoundToCombatAction(DEFAULT_KEY_BINDINGS, 'KeyJ')).toBe(true);
+    expect(isKeyBoundToCombatAction(DEFAULT_KEY_BINDINGS, 'Space')).toBe(true);
+    expect(isKeyBoundToCombatAction(DEFAULT_KEY_BINDINGS, 'KeyB')).toBe(false);
+    expect(isKeyBoundToCombatAction(DEFAULT_KEY_BINDINGS, 'F1')).toBe(false);
+  });
+
   it('PlayerMotion 使用重绑后的移动键，旧 WASD 立即失效', () => {
     const layout = createArenaLayout();
     const bindings = {
@@ -140,10 +150,10 @@ describe('共享设置 store 与持久化', () => {
     const unsubscribe = store.subscribe((settings) => seen.push(settings));
     expect(store.subscriberCount).toBe(1);
 
-    expect(store.rebind('attack', 'KeyU')).toEqual({ ok: true, conflict: null });
-    expect(store.get().keyBindings.attack).toBe('KeyU');
-    expect(seen.at(-1)?.keyBindings.attack).toBe('KeyU');
-    expect(loadUserSettings(localStorage).keyBindings.attack).toBe('KeyU');
+    expect(store.rebind('attack', 'KeyQ')).toEqual({ ok: true, conflict: null });
+    expect(store.get().keyBindings.attack).toBe('KeyQ');
+    expect(seen.at(-1)?.keyBindings.attack).toBe('KeyQ');
+    expect(loadUserSettings(localStorage).keyBindings.attack).toBe('KeyQ');
 
     unsubscribe();
     expect(store.subscriberCount).toBe(0);

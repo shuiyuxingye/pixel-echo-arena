@@ -1,14 +1,23 @@
 /**
  * 普通敌人行为（纯逻辑，不依赖 Phaser）。
  *
- * 规则来源 `docs/game-design.md` §7：
- * - 追击者 60 HP、接触 8 物伤；
- * - 射手 45 HP、每 1.6 秒发射 10 物伤弹；
- * - 冲锋者 80 HP、预警 0.7 秒后直线冲锋，命中 18 物伤；
- * - 重装者 160 HP、护甲 40、缓慢近战 14 物伤；
+ * 前四种普通怪（US-011）：
+ * - 团团怪 直接追击（接触伤害）；
+ * - 镰足虫 高速绕侧，接近后扑向目标（接触伤害）；
+ * - 喷菇 停顿 0.7 秒后朝玩家发射孢子弹；
+ * - 冲锋猪 0.7 秒蓄力后锁定方向直线冲锋。
+ * 后四种普通怪（US-012）：
+ * - 盾壳蟹 慢速挡路，朝向缓慢转向玩家，背侧是弱点；
+ * - 灯灵 远程射击，每 4 秒治疗周围一名受伤敌人 8% 最大生命，
+ *   不治疗其他灯灵与 Boss；
+ * - 爆爆兽 蓄力 0.9 秒后自爆，伤害区在蓄力期间先显示，提前击杀可打断；
+ * - 巢母 每 8 秒召唤 2 只幼虫，单个巢母终生最多 6 只，幼虫占用同屏 100 上限；
+ * - 幼虫沿用追击行为，击杀只给 1 金币/1 经验。
+ * 其余通用规则：
  * - 出生点距玩家至少 220，提前 0.8 秒红圈提示，不生成在墙中；
  * - 近战敌人受障碍阻挡，直射弹体命中障碍销毁；
- * - 所有敌人接触伤害共享 0.5 秒受击间隔，弹体命中无敌期无伤。
+ * - 所有敌人接触伤害共享 0.5 秒受击间隔，弹体命中无敌期无伤；
+ * - 同屏敌人上限 100（含召唤物），召唤不能突破该名额。
  *
  * 数值来自 `src/game/data/enemies.ts`；文档未给出的移动/射程参数集中在本文件，
  * 只用于让行为可玩，不改变伤害与生命基线。
@@ -19,18 +28,35 @@ import {
   moveCircleWithCollision,
   type ArenaLayout,
 } from './arena';
+import type { CombatEventSink } from './damage-events';
 import {
   BOSS_CHARGE_DAMAGE,
   BOSS_CHARGE_DAMAGE_TYPE,
   BOSS_CHARGE_SPEED,
+  BOSS_CONTROL_SLOW_MULTIPLIER,
   BOSS_RADIUS,
+  BOSS_SUMMON_MAX_ALIVE,
   BossCombat,
   type BossExplosion,
   type BossStepResult,
   type BossSummonEvent,
 } from './boss';
 import { Combatant, distanceSquared, type DamageResult } from './combat';
-import type { DamageType, EnemyBehavior, EnemyDefinition } from './data';
+import {
+  remainingEnemyCapacity,
+  waveDamageMultiplier,
+  type DamageType,
+  type EnemyBehavior,
+  type EnemyDefinition,
+  type EnemyId,
+} from './data';
+import {
+  ELITE_ATTACK_WARNING_SECONDS,
+  ELITE_BLAST_DAMAGE,
+  ELITE_BLAST_FIRST_DELAY_SECONDS,
+  ELITE_BLAST_INTERVAL_SECONDS,
+  ELITE_BLAST_RADIUS,
+} from './elite';
 import type { EnemySystemWorldSnapshot } from './world-snapshot';
 
 /** 默认圆形碰撞半径（逻辑像素）。 */
@@ -47,11 +73,25 @@ export const CONTACT_HIT_INTERVAL_SECONDS = 0.5;
 /** 各行为的移动速度（逻辑像素/秒），仅用于手感调校。 */
 export const ENEMY_MOVE_SPEED: Readonly<Record<EnemyBehavior, number>> = {
   chase: 100,
+  flank: 150,
+  spit: 65,
   shoot: 65,
   charge: 82,
+  guard: 48,
+  mend: 65,
+  explode: 95,
+  summon: 48,
   heavy: 48,
   boss: 0,
 };
+
+/** 镰足虫绕侧：距目标超过该值先走斜向弧线，进入后直线扑近。 */
+export const SKITTER_FLANK_DISTANCE = 170;
+/** 镰足虫绕侧相对直冲方向的偏移角（弧度），约 60°。 */
+export const SKITTER_FLANK_ANGLE = Math.PI / 3;
+
+/** 喷菇攻击前停顿（预警）时长；不得低于普通攻击 0.7 秒下限。 */
+export const SPITTER_WINDUP_SECONDS = 0.7;
 
 /** 射手：保持距离、开火射程与弹速。 */
 export const SHOOTER_STANDOFF_DISTANCE = 230;
@@ -65,6 +105,27 @@ export const CHARGER_TRIGGER_RANGE = 260;
 export const CHARGE_DASH_SPEED = 320;
 export const CHARGE_DASH_SECONDS = 0.35;
 export const CHARGE_COOLDOWN_SECONDS = 1.6;
+
+/** 盾壳蟹：转向速度与背侧弱点张角；弱点命中按 1.5 倍增伤。 */
+export const BULWARK_TURN_RATE = 2.4;
+export const BULWARK_WEAK_ARC = (Math.PI * 2) / 3;
+export const BULWARK_WEAK_DAMAGE_MULTIPLIER = 1.5;
+
+/** 灯灵：每 4 秒治疗周围一名受伤敌人最大生命的 8%。 */
+export const MENDER_HEAL_INTERVAL_SECONDS = 4;
+export const MENDER_HEAL_PERCENT = 0.08;
+export const MENDER_HEAL_RANGE = 240;
+
+/** 爆爆兽：触发距离、0.9 秒蓄力与自爆半径。 */
+export const BOMBER_TRIGGER_RANGE = 240;
+export const BOMBER_WINDUP_SECONDS = 0.9;
+export const BOMBER_EXPLOSION_RADIUS = 90;
+
+/** 巢母：每 8 秒召唤 2 只幼虫，单个巢母终生最多 6 只。 */
+export const BROODMOTHER_SUMMON_INTERVAL_SECONDS = 8;
+export const BROODMOTHER_SUMMON_COUNT = 2;
+export const BROODMOTHER_MAX_LARVAE = 6;
+export const BROODMOTHER_SUMMON_ID: EnemyId = 'larva';
 
 /** 绕掩体时沿切向行走的持续时间与侧向选择。 */
 const AVOID_SECONDS = 0.6;
@@ -95,6 +156,8 @@ export interface EnemySummonTarget extends EnemyPoint {
 export interface EnemySpawnTelegraph extends EnemyPoint {
   readonly id: string;
   readonly enemy: EnemyDefinition;
+  /** Boss 二阶段增援：不计入金币/经验收益。 */
+  readonly summoned?: boolean;
   remainingSeconds: number;
 }
 
@@ -106,6 +169,8 @@ export interface EnemyUnit {
   readonly enemy: EnemyDefinition;
   readonly combatant: Combatant;
   readonly radius: number;
+  /** Boss 二阶段增援：击杀后不提供金币/经验。 */
+  readonly summoned: boolean;
   activity: EnemyActivity;
   windupRemaining: number;
   dashRemaining: number;
@@ -113,8 +178,67 @@ export interface EnemyUnit {
   dashY: number;
   attackCooldown: number;
   chargeCooldown: number;
+  /** 下一次精英地面爆破的冷却；非精英为 0。 */
+  eliteBlastCooldown: number;
+  /** 盾壳蟹朝向（弧度）；弱点在朝向背面。其他敌人不读取。 */
+  facingAngle: number;
+  /** 灯灵下一次治疗冷却。 */
+  healCooldown: number;
+  /** 巢母下一次召唤冷却。 */
+  summonCooldown: number;
+  /** 单个巢母终生已召唤的幼虫数，最多 6。 */
+  larvaeSummoned: number;
   avoidSeconds: number;
   avoidSign: 1 | -1;
+}
+
+/** 灯灵治疗事件；场景据此画治疗连线与浮字。 */
+export interface EnemyHealEvent {
+  readonly menderId: string;
+  readonly targetId: string;
+  /** 实际回复量（不会超过目标缺失生命）。 */
+  readonly amount: number;
+  readonly healerX: number;
+  readonly healerY: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** 爆爆兽自爆结果；伤害区在蓄力期间已由场景显示。 */
+export interface EnemyBomberExplosion {
+  readonly enemyId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  /** 玩家不在范围内、被遮挡或无敌时为 null。 */
+  readonly damage: DamageResult | null;
+}
+
+/** 巢母召唤请求；数量已按终生上限截断，全局同屏上限由系统再次截断。 */
+export interface EnemyBroodSummonRequest {
+  readonly ownerId: string;
+  readonly enemyId: EnemyId;
+  readonly count: number;
+}
+
+/**
+ * 击杀是否产生金币/经验收益。
+ * Boss 二阶段增援只增加场面压力，击杀后不给任何经济收益。
+ */
+export function enemyGrantsKillRewards(unit: Pick<EnemyUnit, 'summoned'>): boolean {
+  return unit.summoned !== true;
+}
+
+/**
+ * 击杀是否计入宝箱/战利品资格。
+ * 巢母与幼虫属于刷怪来源，不触发宝箱奖励；Boss 二阶段增援同样不计。
+ * 该规则供后续宝箱系统消费，避免把召唤物当成正式击杀。
+ */
+export function enemyGrantsChestReward(
+  unit: Pick<EnemyUnit, 'enemy' | 'summoned'>,
+): boolean {
+  if (unit.summoned === true) return false;
+  return unit.enemy.id !== 'broodmother' && unit.enemy.id !== 'larva';
 }
 
 export interface EnemyProjectileState {
@@ -158,6 +282,27 @@ export interface EnemyBossBlastHit {
   readonly damage: DamageResult | null;
 }
 
+/** 精英地面爆破预警；预警圈与落地按同一 `id` 配对。 */
+export interface EliteBlast {
+  readonly id: number;
+  readonly ownerId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly damage: number;
+  readonly damageType: DamageType;
+  remainingSeconds: number;
+}
+
+/** 精英地面爆破落地结果；`blastId` 与对应预警圈相同。 */
+export interface EnemyEliteBlastHit {
+  readonly blastId: number;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly damage: DamageResult | null;
+}
+
 /** 玩家本次胜利清理时移除的普通敌人、敌弹与出生提示。 */
 export interface EnemyVictoryClear {
   readonly enemyIds: readonly string[];
@@ -188,7 +333,14 @@ export interface EnemyStepResult {
   readonly blockedProjectileIds: readonly number[];
   readonly expiredProjectileIds: readonly number[];
   readonly bossBlastHits: readonly EnemyBossBlastHit[];
+  readonly eliteBlastHits: readonly EnemyEliteBlastHit[];
   readonly bossSummonRequests: readonly BossSummonEvent[];
+  /** 灯灵本步完成的治疗。 */
+  readonly healEvents: readonly EnemyHealEvent[];
+  /** 爆爆兽本步自爆；提前击杀的单位不会产生该事件。 */
+  readonly bomberExplosions: readonly EnemyBomberExplosion[];
+  /** 巢母本步发出的幼虫召唤请求（已考虑终生上限与全局同屏名额）。 */
+  readonly broodSummonRequests: readonly EnemyBroodSummonRequest[];
 }
 
 /**
@@ -258,6 +410,42 @@ function unitDirection(from: EnemyPoint, to: EnemyPoint): { x: number; y: number
   return { x: dx / distance, y: dy / distance, distance };
 }
 
+/** 把角度归一化到 (-π, π]，用于朝向缓转与弱点夹角比较。 */
+function normalizeAngle(angle: number): number {
+  let value = angle;
+  while (value > Math.PI) value -= Math.PI * 2;
+  while (value <= -Math.PI) value += Math.PI * 2;
+  return value;
+}
+
+/** 盾壳蟹的弱点方向（单位：弧度），位于朝向背面。 */
+export function bulwarkWeakPointAngle(
+  unit: Pick<EnemyUnit, 'facingAngle'>,
+): number {
+  return normalizeAngle(unit.facingAngle + Math.PI);
+}
+
+/**
+ * 命中点是否落在盾壳蟹背侧的弱点扇区内。
+ * 只有盾壳蟹有弱点；其他敌人恒为 false。
+ */
+export function isBulwarkWeakPointHit(unit: EnemyUnit, origin: EnemyPoint): boolean {
+  if (!unit.combatant.isAlive || unit.enemy.id !== 'bulwark') return false;
+  const originAngle = Math.atan2(
+    origin.y - unit.combatant.y,
+    origin.x - unit.combatant.x,
+  );
+  const difference = normalizeAngle(originAngle - bulwarkWeakPointAngle(unit));
+  return Math.abs(difference) <= BULWARK_WEAK_ARC / 2;
+}
+
+/** 单步行为产出的非战斗事件；由 `step` 汇总到结果里。 */
+interface EnemyUnitStepEvents {
+  readonly heal?: EnemyHealEvent;
+  readonly bomberExplosion?: EnemyBomberExplosion;
+  readonly summon?: { readonly count: number };
+}
+
 /**
  * 敌人系统：管理出生提示、四种行为、接触伤害与敌弹。
  * 场景每个固定逻辑步调用一次 `step`，渲染帧率不影响任何计时。
@@ -265,9 +453,12 @@ function unitDirection(from: EnemyPoint, to: EnemyPoint): { x: number; y: number
 export class EnemySystem {
   private readonly layout: ArenaLayout;
   private readonly radius: number;
+  private readonly events?: CombatEventSink;
   private readonly units: EnemyUnit[] = [];
   private readonly spawnQueue: EnemySpawnTelegraph[] = [];
   private readonly projectileList: EnemyProjectileState[] = [];
+  private eliteBlastsList: EliteBlast[] = [];
+  private nextEliteBlastId = 1;
   private bossCombat: BossCombat | null = null;
   private bossUnit: EnemyUnit | null = null;
   private contactCooldown = 0;
@@ -276,9 +467,15 @@ export class EnemySystem {
   private nextProjectileId = 1;
   private elapsed = 0;
 
-  constructor(options: { readonly layout: ArenaLayout; readonly radius?: number }) {
+  constructor(options: {
+    readonly layout: ArenaLayout;
+    readonly radius?: number;
+    /** 注入后敌人受到的伤害/治疗都写入统一的来源链事件日志。 */
+    readonly events?: CombatEventSink;
+  }) {
     this.layout = options.layout;
     this.radius = options.radius ?? ENEMY_RADIUS;
+    this.events = options.events;
   }
 
   get enemies(): readonly EnemyUnit[] {
@@ -289,8 +486,22 @@ export class EnemySystem {
     return this.spawnQueue;
   }
 
+  /** 场上存活 + 待落地的敌人数；全局同屏上限按此计，召唤幼虫同样占用。 */
+  get activeEnemyCount(): number {
+    let count = this.spawnQueue.length;
+    for (const unit of this.units) {
+      if (unit.combatant.isAlive) count += 1;
+    }
+    return count;
+  }
+
   get projectiles(): readonly EnemyProjectileState[] {
     return this.projectileList;
+  }
+
+  /** 当前仍处于预警中的精英地面爆破；场景按 id 渲染预警圈。 */
+  get eliteBlasts(): readonly EliteBlast[] {
+    return this.eliteBlastsList;
   }
 
   get elapsedSeconds(): number {
@@ -312,6 +523,7 @@ export class EnemySystem {
     enemy: EnemyDefinition,
     player: EnemyPoint,
     angleOffset = 0,
+    options: { readonly summoned?: boolean } = {},
   ): EnemySpawnTelegraph {
     const point = resolveEnemySpawnPoint(
       this.layout,
@@ -325,6 +537,7 @@ export class EnemySystem {
       x: point.x,
       y: point.y,
       remainingSeconds: SPAWN_TELEGRAPH_SECONDS,
+      ...(options.summoned === true ? { summoned: true } : {}),
     };
     this.nextTelegraphId += 1;
     this.spawnQueue.push(telegraph);
@@ -399,6 +612,7 @@ export class EnemySystem {
           y: unit.combatant.y,
           health: unit.combatant.health.health,
           shield: unit.combatant.health.shield,
+          summoned: unit.summoned,
           activity: unit.activity,
           windupRemaining: unit.windupRemaining,
           dashRemaining: unit.dashRemaining,
@@ -406,6 +620,11 @@ export class EnemySystem {
           dashY: unit.dashY,
           attackCooldown: unit.attackCooldown,
           chargeCooldown: unit.chargeCooldown,
+          eliteBlastCooldown: unit.eliteBlastCooldown,
+          facingAngle: unit.facingAngle,
+          healCooldown: unit.healCooldown,
+          summonCooldown: unit.summonCooldown,
+          larvaeSummoned: unit.larvaeSummoned,
           avoidSeconds: unit.avoidSeconds,
           avoidSign: unit.avoidSign,
         })),
@@ -415,8 +634,11 @@ export class EnemySystem {
         x: telegraph.x,
         y: telegraph.y,
         remainingSeconds: telegraph.remainingSeconds,
+        ...(telegraph.summoned === true ? { summoned: true } : {}),
       })),
       projectiles: this.projectileList.map((projectile) => ({ ...projectile })),
+      eliteBlasts: this.eliteBlastsList.map((blast) => ({ ...blast })),
+      nextEliteBlastId: this.nextEliteBlastId,
       boss: this.bossCombat?.snapshotWorld() ?? null,
     };
   }
@@ -431,6 +653,10 @@ export class EnemySystem {
     this.units.length = 0;
     this.spawnQueue.length = 0;
     this.projectileList.length = 0;
+    this.eliteBlastsList = [];
+    this.nextEliteBlastId = Number.isInteger(state.nextEliteBlastId)
+      ? Math.max(1, state.nextEliteBlastId ?? 1)
+      : 1;
     this.bossCombat = null;
     this.bossUnit = null;
 
@@ -448,8 +674,10 @@ export class EnemySystem {
           maxHealth: saved.enemy.maxHealth,
           armor: saved.enemy.armor,
           magicResist: saved.enemy.magicResist,
+          events: this.events,
         }),
         radius,
+        summoned: saved.summoned === true,
         activity: saved.activity,
         windupRemaining: nonNegative(saved.windupRemaining),
         dashRemaining: nonNegative(saved.dashRemaining),
@@ -457,6 +685,15 @@ export class EnemySystem {
         dashY: Number.isFinite(saved.dashY) ? saved.dashY : 0,
         attackCooldown: nonNegative(saved.attackCooldown),
         chargeCooldown: nonNegative(saved.chargeCooldown),
+        eliteBlastCooldown: nonNegative(saved.eliteBlastCooldown ?? 0),
+        facingAngle: Number.isFinite(saved.facingAngle) ? (saved.facingAngle as number) : 0,
+        healCooldown: nonNegative(saved.healCooldown ?? MENDER_HEAL_INTERVAL_SECONDS),
+        summonCooldown: nonNegative(
+          saved.summonCooldown ?? BROODMOTHER_SUMMON_INTERVAL_SECONDS,
+        ),
+        larvaeSummoned: Number.isInteger(saved.larvaeSummoned)
+          ? Math.max(0, saved.larvaeSummoned as number)
+          : 0,
         avoidSeconds: nonNegative(saved.avoidSeconds),
         avoidSign: saved.avoidSign === -1 ? -1 : 1,
       };
@@ -478,11 +715,16 @@ export class EnemySystem {
         x: saved.x,
         y: saved.y,
         remainingSeconds: nonNegative(saved.remainingSeconds),
+        ...(saved.summoned === true ? { summoned: true } : {}),
       });
     }
 
     for (const saved of state.projectiles) {
       this.projectileList.push({ ...saved });
+    }
+
+    for (const saved of state.eliteBlasts ?? []) {
+      this.eliteBlastsList.push({ ...saved });
     }
 
     if (this.bossCombat && state.boss) {
@@ -549,7 +791,11 @@ export class EnemySystem {
     const blockedProjectileIds: number[] = [];
     const expiredProjectileIds: number[] = [];
     const bossBlastHits: EnemyBossBlastHit[] = [];
+    const eliteBlastHits: EnemyEliteBlastHit[] = [];
     const bossSummonRequests: BossSummonEvent[] = [];
+    const healEvents: EnemyHealEvent[] = [];
+    const bomberExplosions: EnemyBomberExplosion[] = [];
+    const broodSummonRequests: EnemyBroodSummonRequest[] = [];
 
     if (!(stepSeconds > 0) || !Number.isFinite(stepSeconds)) {
       return {
@@ -560,7 +806,11 @@ export class EnemySystem {
         blockedProjectileIds,
         expiredProjectileIds,
         bossBlastHits,
+        eliteBlastHits,
         bossSummonRequests,
+        healEvents,
+        bomberExplosions,
+        broodSummonRequests,
       };
     }
 
@@ -572,7 +822,14 @@ export class EnemySystem {
     for (const telegraph of this.spawnQueue) {
       telegraph.remainingSeconds = decay(telegraph.remainingSeconds, stepSeconds);
       if (telegraph.remainingSeconds <= TIME_EPSILON) {
-        spawned.push(this.createUnit(telegraph.enemy, telegraph.x, telegraph.y));
+        spawned.push(
+          this.createUnit(
+            telegraph.enemy,
+            telegraph.x,
+            telegraph.y,
+            telegraph.summoned === true,
+          ),
+        );
       } else {
         pending.push(telegraph);
       }
@@ -602,15 +859,52 @@ export class EnemySystem {
       for (const explosion of bossResult.explosions) {
         bossBlastHits.push(this.resolveBossBlast(explosion, context));
       }
-      bossSummonRequests.push(...bossResult.summons);
+      // 场内增援超过上限时截断本组请求；已存活与待落地的增援都计入上限，
+      // 同时不能突破全局同屏 100（幼虫等召唤物共享同一名额）。
+      for (const request of bossResult.summons) {
+        const capacity = Math.max(
+          0,
+          Math.min(
+            BOSS_SUMMON_MAX_ALIVE - this.reinforcementCount(),
+            remainingEnemyCapacity(this.activeEnemyCount),
+          ),
+        );
+        const count = Math.min(request.count, capacity);
+        if (count > 0) bossSummonRequests.push({ ...request, count });
+      }
     }
 
+    // 巢母召唤在本步内共享全局名额：先按终生上限生成请求，
+    // 再按“存活 + 待落地 + 本步已请求”截断，避免同帧多只巢母突破 100。
+    let reservedSummons = 0;
     for (const unit of this.units) {
       if (!unit.combatant.isAlive) continue;
-      if (context.isStunned?.(unit.id)) continue;
-      const rooted = context.isRooted?.(unit.id) ?? false;
-      this.stepUnit(unit, stepSeconds, context, rooted);
+      // Boss 免疫眩晕/束缚，控制由 stepBoss 转换为减速；普通敌人才整步跳过。
+      if (this.isControlLocked(unit, context)) continue;
+      const rooted = this.isRooted(unit, context);
+      const events = this.stepUnit(unit, stepSeconds, context, rooted);
+      if (events.heal) healEvents.push(events.heal);
+      if (events.bomberExplosion) bomberExplosions.push(events.bomberExplosion);
+      if (events.summon && events.summon.count > 0) {
+        const capacity = remainingEnemyCapacity(
+          this.activeEnemyCount + reservedSummons,
+        );
+        const count = Math.min(events.summon.count, capacity);
+        if (count > 0) {
+          broodSummonRequests.push({
+            ownerId: unit.id,
+            enemyId: BROODMOTHER_SUMMON_ID,
+            count,
+          });
+          unit.larvaeSummoned += count;
+          unit.summonCooldown = BROODMOTHER_SUMMON_INTERVAL_SECONDS;
+          reservedSummons += count;
+        }
+      }
     }
+
+    // 精英地面爆破：先结算已有预警，再为冷却完成的精英布下新预警。
+    eliteBlastHits.push(...this.stepEliteAttacks(stepSeconds, context));
 
     const survivors: EnemyProjectileState[] = [];
     for (const projectile of this.projectileList) {
@@ -646,13 +940,17 @@ export class EnemySystem {
       blockedProjectileIds,
       expiredProjectileIds,
       bossBlastHits,
+      eliteBlastHits,
       bossSummonRequests,
+      healEvents,
+      bomberExplosions,
+      broodSummonRequests,
     };
   }
 
   /**
    * 推进 Boss 控制器并把冲刺位移写回单位。
-   * Boss 被眩晕/束缚时整步冻结，与其他敌人的控制语义一致。
+   * Boss 免疫眩晕/束缚：控制不冻结攻击节奏，只把冲锋移动降为 50% 速度。
    */
   private stepBoss(
     stepSeconds: number,
@@ -661,7 +959,6 @@ export class EnemySystem {
     const boss = this.bossCombat;
     const unit = this.bossUnit;
     if (!boss || !unit?.combatant.isAlive) return null;
-    if (context.isStunned?.(unit.id) || context.isRooted?.(unit.id)) return null;
 
     const result = boss.step(stepSeconds, {
       boss: {
@@ -674,8 +971,9 @@ export class EnemySystem {
     });
 
     if (result.dashVector) {
-      const multiplier = Math.max(0, context.speedMultiplier?.(unit.id) ?? 1);
-      const distance = BOSS_CHARGE_SPEED * multiplier * stepSeconds;
+      const speedMultiplier = Math.max(0, context.speedMultiplier?.(unit.id) ?? 1);
+      const controlMultiplier = this.bossControlSlowMultiplier(unit, context);
+      const distance = BOSS_CHARGE_SPEED * speedMultiplier * controlMultiplier * stepSeconds;
       const moved = moveCircleWithCollision(
         this.layout,
         unit.combatant.x,
@@ -692,6 +990,41 @@ export class EnemySystem {
     unit.windupRemaining = boss.windupRemaining;
     unit.dashRemaining = boss.dashRemaining;
     return result;
+  }
+
+  /** 普通敌人被眩晕时整步跳过；Boss 只减速，从不被控制锁死。 */
+  private isControlLocked(unit: EnemyUnit, context: EnemyStepContext): boolean {
+    if (unit.enemy.behavior === 'boss') return false;
+    return context.isStunned?.(unit.id) ?? false;
+  }
+
+  /** 普通敌人的束缚冻结位移；Boss 的束缚同样只转换为减速。 */
+  private isRooted(unit: EnemyUnit, context: EnemyStepContext): boolean {
+    if (unit.enemy.behavior === 'boss') return false;
+    return context.isRooted?.(unit.id) ?? false;
+  }
+
+  /** Boss 受眩晕/束缚时只按减速倍率移动。 */
+  private bossControlSlowMultiplier(
+    unit: EnemyUnit,
+    context: EnemyStepContext,
+  ): number {
+    if (unit.enemy.behavior !== 'boss') return 1;
+    const controlled =
+      (context.isStunned?.(unit.id) ?? false) || (context.isRooted?.(unit.id) ?? false);
+    return controlled ? BOSS_CONTROL_SLOW_MULTIPLIER : 1;
+  }
+
+  /** 已存活与待落地的 Boss 增援总数，用于 8 只上限。 */
+  private reinforcementCount(): number {
+    let count = 0;
+    for (const unit of this.units) {
+      if (unit.summoned && unit.combatant.isAlive) count += 1;
+    }
+    for (const telegraph of this.spawnQueue) {
+      if (telegraph.summoned === true) count += 1;
+    }
+    return count;
   }
 
   /** 爆破落地结算：范围内且未被墙体遮挡才造成伤害；无敌期无伤。 */
@@ -713,6 +1046,87 @@ export class EnemySystem {
       radius: explosion.radius,
       damage,
     };
+  }
+
+  /**
+   * 精英地面爆破：每个存活精英按冷却在玩家当前位置布下预警，
+   * 预警至少 0.9 秒后在同一个 ID 下落点结算。
+   */
+  private stepEliteAttacks(
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): EnemyEliteBlastHit[] {
+    const hits = this.stepEliteBlasts(stepSeconds, context);
+
+    for (const unit of this.units) {
+      if (!unit.combatant.isAlive || unit.enemy.elite !== true) continue;
+      if (context.isStunned?.(unit.id)) continue;
+
+      unit.eliteBlastCooldown = decay(unit.eliteBlastCooldown, stepSeconds);
+      if (unit.eliteBlastCooldown > TIME_EPSILON) continue;
+
+      this.createEliteBlast(unit, context.player);
+      unit.eliteBlastCooldown = ELITE_BLAST_INTERVAL_SECONDS;
+    }
+
+    return hits;
+  }
+
+  /** 推进已有精英预警；到点的爆破按同一个 ID 产出落地结果。 */
+  private stepEliteBlasts(
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): EnemyEliteBlastHit[] {
+    if (this.eliteBlastsList.length === 0) return [];
+    const hits: EnemyEliteBlastHit[] = [];
+    const survivors: EliteBlast[] = [];
+
+    for (const blast of this.eliteBlastsList) {
+      blast.remainingSeconds = decay(blast.remainingSeconds, stepSeconds);
+      if (blast.remainingSeconds <= TIME_EPSILON) {
+        const radius = blast.radius + context.player.radius;
+        const within = distanceSquared(blast, context.player) <= radius * radius;
+        const visible = hasLineOfSight(this.layout, blast, context.player);
+        let damage: DamageResult | null = null;
+        if (within && visible && !context.player.isInvulnerable) {
+          damage = context.applyPlayerDamage(blast.damage, blast.damageType);
+        }
+        hits.push({
+          blastId: blast.id,
+          x: blast.x,
+          y: blast.y,
+          radius: blast.radius,
+          damage,
+        });
+      } else {
+        survivors.push(blast);
+      }
+    }
+
+    this.eliteBlastsList = survivors;
+    return hits;
+  }
+
+  private createEliteBlast(unit: EnemyUnit, player: EnemyPlayerTarget): EliteBlast {
+    const wave = unit.enemy.eliteWave ?? 1;
+    const blast: EliteBlast = {
+      id: this.nextEliteBlastId,
+      ownerId: unit.id,
+      x: player.x,
+      y: player.y,
+      radius: ELITE_BLAST_RADIUS,
+      damage: ELITE_BLAST_DAMAGE * waveDamageMultiplier(wave),
+      damageType: 'magic',
+      remainingSeconds: ELITE_ATTACK_WARNING_SECONDS,
+    };
+    this.nextEliteBlastId += 1;
+    this.eliteBlastsList.push(blast);
+    return blast;
+  }
+
+  /** 清场时移除尚未落地的精英预警，不再结算。 */
+  clearEliteBlasts(): void {
+    this.eliteBlastsList = [];
   }
 
   private addEnemyProjectile(
@@ -741,7 +1155,12 @@ export class EnemySystem {
     this.nextProjectileId += 1;
   }
 
-  private createUnit(enemy: EnemyDefinition, x: number, y: number): EnemyUnit {
+  private createUnit(
+    enemy: EnemyDefinition,
+    x: number,
+    y: number,
+    summoned = false,
+  ): EnemyUnit {
     const radius = this.radiusFor(enemy);
     const unit: EnemyUnit = {
       id: `enemy-${this.nextUnitId}`,
@@ -754,8 +1173,10 @@ export class EnemySystem {
         maxHealth: enemy.maxHealth,
         armor: enemy.armor,
         magicResist: enemy.magicResist,
+        events: this.events,
       }),
       radius,
+      summoned,
       activity: 'idle',
       windupRemaining: 0,
       dashRemaining: 0,
@@ -763,6 +1184,11 @@ export class EnemySystem {
       dashY: 0,
       attackCooldown: enemy.attack?.intervalSeconds ?? 0,
       chargeCooldown: 0,
+      eliteBlastCooldown: enemy.elite === true ? ELITE_BLAST_FIRST_DELAY_SECONDS : 0,
+      facingAngle: 0,
+      healCooldown: MENDER_HEAL_INTERVAL_SECONDS,
+      summonCooldown: BROODMOTHER_SUMMON_INTERVAL_SECONDS,
+      larvaeSummoned: 0,
       avoidSeconds: 0,
       avoidSign: this.nextUnitId % 2 === 0 ? 1 : -1,
     };
@@ -780,7 +1206,7 @@ export class EnemySystem {
     stepSeconds: number,
     context: EnemyStepContext,
     rooted: boolean,
-  ): void {
+  ): EnemyUnitStepEvents {
     switch (unit.enemy.behavior) {
       case 'chase':
         if (rooted) break;
@@ -792,6 +1218,10 @@ export class EnemySystem {
           context,
         );
         break;
+      case 'flank':
+        if (rooted) break;
+        this.stepFlanker(unit, stepSeconds, context);
+        break;
       case 'heavy':
         if (rooted) break;
         this.moveToward(
@@ -802,17 +1232,141 @@ export class EnemySystem {
           context,
         );
         break;
+      case 'guard':
+        if (rooted) break;
+        this.stepGuard(unit, stepSeconds, context);
+        break;
+      case 'spit':
+        this.stepSpitter(unit, stepSeconds, context, rooted);
+        break;
       case 'shoot':
         this.stepShooter(unit, stepSeconds, context, rooted);
         break;
+      case 'mend':
+        return this.stepMender(unit, stepSeconds, context, rooted);
       case 'charge':
         // 束缚期间冻结预警/冲刺进度，也不会开始新的冲锋。
         if (rooted) break;
         this.stepCharger(unit, stepSeconds, context);
         break;
+      case 'explode':
+        if (rooted) break;
+        return this.stepBomber(unit, stepSeconds, context);
+      case 'summon':
+        return this.stepBroodmother(unit, stepSeconds, context, rooted);
       case 'boss':
         break;
     }
+    return {};
+  }
+
+  /**
+   * 盾壳蟹：慢速朝玩家移动，朝向按有限角速度转向玩家。
+   * 弱点固定在朝向背面，玩家绕后可以打弱点。
+   */
+  private stepGuard(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): void {
+    const target = this.meleeTarget(unit, context).point;
+    const direction = unitDirection(unit.combatant, target);
+    if (direction.distance > 0) {
+      const desired = Math.atan2(direction.y, direction.x);
+      const difference = normalizeAngle(desired - unit.facingAngle);
+      const maxTurn = BULWARK_TURN_RATE * stepSeconds;
+      unit.facingAngle = normalizeAngle(
+        unit.facingAngle + Math.max(-maxTurn, Math.min(maxTurn, difference)),
+      );
+    }
+    this.moveToward(
+      unit,
+      target,
+      stepSeconds,
+      ENEMY_MOVE_SPEED.guard,
+      context,
+    );
+  }
+
+  /**
+   * 镰足虫：远离目标时沿直冲方向偏转 60° 的弧线快速绕侧，
+   * 进入 170 后改为直线扑近；被掩体挡住时退回通用绕行。
+   */
+  private stepFlanker(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): void {
+    const target = this.meleeTarget(unit, context).point;
+    const direction = unitDirection(unit.combatant, target);
+    if (direction.distance === 0) return;
+
+    if (
+      direction.distance <= SKITTER_FLANK_DISTANCE ||
+      !hasLineOfSight(this.layout, unit.combatant, target)
+    ) {
+      this.moveToward(unit, target, stepSeconds, ENEMY_MOVE_SPEED.flank, context);
+      return;
+    }
+
+    const angle = SKITTER_FLANK_ANGLE * unit.avoidSign;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    this.moveDirection(
+      unit,
+      direction.x * cos - direction.y * sin,
+      direction.x * sin + direction.y * cos,
+      ENEMY_MOVE_SPEED.flank,
+      stepSeconds,
+      context,
+    );
+  }
+
+  /**
+   * 喷菇：维持射程与站位，攻击前停顿 0.7 秒并在原地蓄力，
+   * 预警结束后朝玩家当前位置发射孢子弹；蓄力期间不移动。
+   */
+  private stepSpitter(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+    rooted: boolean,
+  ): void {
+    const attack = unit.enemy.attack;
+    if (!attack) return;
+
+    if (unit.activity === 'windup') {
+      unit.windupRemaining = decay(unit.windupRemaining, stepSeconds);
+      if (unit.windupRemaining <= TIME_EPSILON) {
+        const aim = unitDirection(unit.combatant, context.player);
+        unit.activity = 'idle';
+        this.fireProjectile(unit, aim.x, aim.y, attack.damage, attack.damageType);
+        unit.attackCooldown = attack.intervalSeconds ?? 1.6;
+      }
+      return;
+    }
+
+    const direction = unitDirection(unit.combatant, context.player);
+    const visible = hasLineOfSight(this.layout, unit.combatant, context.player);
+
+    if (!rooted) {
+      if (direction.distance < SHOOTER_FIRE_RANGE && visible) {
+        if (direction.distance > SHOOTER_STANDOFF_DISTANCE) {
+          this.moveToward(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.spit, context);
+        } else if (direction.distance < SHOOTER_STANDOFF_DISTANCE * 0.65) {
+          this.moveAway(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.spit, context);
+        }
+      } else {
+        this.moveToward(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.spit, context);
+      }
+    }
+
+    unit.attackCooldown = decay(unit.attackCooldown, stepSeconds);
+    if (unit.attackCooldown > 0) return;
+    if (!visible || direction.distance > SHOOTER_FIRE_RANGE) return;
+
+    unit.activity = 'windup';
+    unit.windupRemaining = attack.windupSeconds ?? SPITTER_WINDUP_SECONDS;
   }
 
   /** 射手：维持 230 距离并在 1.6 秒间隔发射直线弹；被掩体挡住时先绕行。 */
@@ -849,14 +1403,203 @@ export class EnemySystem {
     unit.attackCooldown = attack.intervalSeconds ?? 1.6;
   }
 
-  /** 冲锋者：0.7 秒预警后锁定方向直线冲刺 0.35 秒，命中造成 18 物伤。 */
+  /**
+   * 灯灵：与射手相同的维持距离与 1.8 秒直线射击，
+   * 另外每 4 秒治疗周围一名受伤敌人最大生命的 8%。
+   * 治疗目标排除灯灵自身/其他灯灵与 Boss；实际回复量不超过缺失生命。
+   */
+  private stepMender(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+    rooted: boolean,
+  ): EnemyUnitStepEvents {
+    const attack = unit.enemy.attack;
+
+    if (attack) {
+      const direction = unitDirection(unit.combatant, context.player);
+      const visible = hasLineOfSight(this.layout, unit.combatant, context.player);
+
+      if (!rooted) {
+        if (direction.distance < SHOOTER_FIRE_RANGE && visible) {
+          if (direction.distance > SHOOTER_STANDOFF_DISTANCE) {
+            this.moveToward(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.mend, context);
+          } else if (direction.distance < SHOOTER_STANDOFF_DISTANCE * 0.65) {
+            this.moveAway(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.mend, context);
+          }
+        } else {
+          this.moveToward(unit, context.player, stepSeconds, ENEMY_MOVE_SPEED.mend, context);
+        }
+      }
+
+      unit.attackCooldown = decay(unit.attackCooldown, stepSeconds);
+      if (unit.attackCooldown <= 0 && visible && direction.distance <= SHOOTER_FIRE_RANGE) {
+        const aim = unitDirection(unit.combatant, context.player);
+        this.fireProjectile(unit, aim.x, aim.y, attack.damage, attack.damageType);
+        unit.attackCooldown = attack.intervalSeconds ?? 1.8;
+      }
+    }
+
+    unit.healCooldown = decay(unit.healCooldown, stepSeconds);
+    if (unit.healCooldown > TIME_EPSILON) return {};
+
+    const target = this.findHealTarget(unit);
+    if (!target) return {};
+
+    const missing = target.combatant.health.maxHealth - target.combatant.health.health;
+    const amount = Math.min(missing, target.combatant.health.maxHealth * MENDER_HEAL_PERCENT);
+    if (!(amount > 0)) return {};
+
+    target.combatant.health.heal(amount);
+    unit.healCooldown = MENDER_HEAL_INTERVAL_SECONDS;
+    return {
+      heal: {
+        menderId: unit.id,
+        targetId: target.id,
+        amount,
+        healerX: unit.combatant.x,
+        healerY: unit.combatant.y,
+        x: target.combatant.x,
+        y: target.combatant.y,
+      },
+    };
+  }
+
+  /** 治疗目标：范围内最缺血的友军；排除灯灵自身/其他灯灵与 Boss。 */
+  private findHealTarget(unit: EnemyUnit): EnemyUnit | null {
+    const rangeSquared = MENDER_HEAL_RANGE * MENDER_HEAL_RANGE;
+    let best: EnemyUnit | null = null;
+    let bestRatio = Number.POSITIVE_INFINITY;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const candidate of this.units) {
+      if (candidate === unit || !candidate.combatant.isAlive) continue;
+      if (candidate.enemy.id === 'mender' || candidate.enemy.behavior === 'boss') continue;
+      const health = candidate.combatant.health;
+      if (health.health >= health.maxHealth) continue;
+      const distance = distanceSquared(unit.combatant, candidate.combatant);
+      if (distance > rangeSquared) continue;
+      const ratio = health.health / health.maxHealth;
+      if (ratio < bestRatio - TIME_EPSILON || (Math.abs(ratio - bestRatio) <= TIME_EPSILON && distance < bestDistance)) {
+        best = candidate;
+        bestRatio = ratio;
+        bestDistance = distance;
+      }
+    }
+
+    return best;
+  }
+
+  /**
+   * 爆爆兽：进入 240 距离后原地蓄力 0.9 秒，结束时自爆并死亡。
+   * 蓄力期间被击杀则单位直接死亡，不再产生自爆事件。
+   */
+  private stepBomber(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): EnemyUnitStepEvents {
+    const attack = unit.enemy.attack;
+
+    if (unit.activity === 'windup') {
+      unit.windupRemaining = decay(unit.windupRemaining, stepSeconds);
+      if (unit.windupRemaining > TIME_EPSILON) return {};
+      return { bomberExplosion: this.detonateBomber(unit, context) };
+    }
+
+    const direction = unitDirection(unit.combatant, context.player);
+    if (
+      direction.distance <= BOMBER_TRIGGER_RANGE &&
+      hasLineOfSight(this.layout, unit.combatant, context.player)
+    ) {
+      unit.activity = 'windup';
+      unit.windupRemaining = attack?.windupSeconds ?? BOMBER_WINDUP_SECONDS;
+      return {};
+    }
+
+    this.moveToward(
+      unit,
+      context.player,
+      stepSeconds,
+      ENEMY_MOVE_SPEED.explode,
+      context,
+    );
+    return {};
+  }
+
+  /** 自爆结算：范围内且未被墙体遮挡才伤害玩家，随后自身死亡。 */
+  private detonateBomber(
+    unit: EnemyUnit,
+    context: EnemyStepContext,
+  ): EnemyBomberExplosion {
+    const radius = BOMBER_EXPLOSION_RADIUS + context.player.radius;
+    const within = distanceSquared(unit.combatant, context.player) <= radius * radius;
+    const visible = hasLineOfSight(this.layout, unit.combatant, context.player);
+    const attack = unit.enemy.attack;
+    let damage: DamageResult | null = null;
+    if (within && visible && !context.player.isInvulnerable && attack) {
+      damage = context.applyPlayerDamage(attack.damage, attack.damageType);
+    }
+
+    unit.activity = 'idle';
+    unit.windupRemaining = 0;
+    // 自爆不是玩家击杀：直接耗尽生命，不经过击杀奖励入口。
+    unit.combatant.applyDamage(
+      unit.combatant.health.maxHealth + unit.combatant.health.shield + 1,
+      'true',
+    );
+
+    return {
+      enemyId: unit.id,
+      x: unit.combatant.x,
+      y: unit.combatant.y,
+      radius: BOMBER_EXPLOSION_RADIUS,
+      damage,
+    };
+  }
+
+  /**
+   * 巢母：每 8 秒尝试召唤 2 只幼虫，单个巢母终生最多 6 只。
+   * 数量先按终生上限截断，全局同屏名额由 `step` 统一截断。
+   */
+  private stepBroodmother(
+    unit: EnemyUnit,
+    stepSeconds: number,
+    context: EnemyStepContext,
+    rooted: boolean,
+  ): EnemyUnitStepEvents {
+    if (!rooted) {
+      this.moveToward(
+        unit,
+        this.meleeTarget(unit, context).point,
+        stepSeconds,
+        ENEMY_MOVE_SPEED.summon,
+        context,
+      );
+    }
+
+    unit.summonCooldown = decay(unit.summonCooldown, stepSeconds);
+    if (unit.summonCooldown > TIME_EPSILON) return {};
+
+    const remainingLifetime = BROODMOTHER_MAX_LARVAE - unit.larvaeSummoned;
+    if (remainingLifetime <= 0) return {};
+    return {
+      summon: { count: Math.min(BROODMOTHER_SUMMON_COUNT, remainingLifetime) },
+    };
+  }
+
+  /** 冲锋者：0.7 秒预警后锁定方向直线冲刺 0.35 秒；精英前摇抬到至少 0.9 秒。 */
   private stepCharger(
     unit: EnemyUnit,
     stepSeconds: number,
     context: EnemyStepContext,
   ): void {
     const attack = unit.enemy.attack;
-    const windupSeconds = attack?.windupSeconds ?? 0.7;
+    const baseWindup = attack?.windupSeconds ?? 0.7;
+    const windupSeconds =
+      unit.enemy.elite === true
+        ? Math.max(baseWindup, ELITE_ATTACK_WARNING_SECONDS)
+        : baseWindup;
 
     if (unit.activity === 'dash') {
       const moved = moveCircleWithCollision(
@@ -875,12 +1618,14 @@ export class EnemySystem {
     }
 
     if (unit.activity === 'windup') {
+      // 预警期间持续把朝向同步到玩家当前位置，场景用同一方向画预警线；
+      // 冲刺沿用最后一帧的方向，保证预警与实际伤害路径一致。
+      const aim = unitDirection(unit.combatant, context.player);
+      unit.dashX = aim.x;
+      unit.dashY = aim.y;
       unit.windupRemaining = decay(unit.windupRemaining, stepSeconds);
       if (unit.windupRemaining <= TIME_EPSILON) {
-        const aim = unitDirection(unit.combatant, context.player);
         unit.activity = 'dash';
-        unit.dashX = aim.x;
-        unit.dashY = aim.y;
         unit.dashRemaining = CHARGE_DASH_SECONDS;
         unit.chargeCooldown = CHARGE_COOLDOWN_SECONDS;
       }
@@ -896,6 +1641,8 @@ export class EnemySystem {
     ) {
       unit.activity = 'windup';
       unit.windupRemaining = windupSeconds;
+      unit.dashX = direction.x;
+      unit.dashY = direction.y;
       return;
     }
 
@@ -903,8 +1650,8 @@ export class EnemySystem {
   }
 
   /**
-   * 追击/重装敌人的近战目标：召唤物存活且比玩家更近时改为攻击召唤物。
-   * 射手与冲锋者仍以玩家为目标，保持既有远程/冲刺行为。
+   * 近战类敌人（追击/绕侧/重装/挡路/巢母）的目标：召唤物存活且比玩家更近时
+   * 改为攻击召唤物。射手、灯灵、喷菇与冲锋者仍以玩家为目标。
    */
   private meleeTarget(
     unit: EnemyUnit,
@@ -976,6 +1723,33 @@ export class EnemySystem {
       unit.avoidSign = unit.avoidSign === 1 ? -1 : 1;
       unit.avoidSeconds = AVOID_SECONDS;
     }
+  }
+
+  /**
+   * 沿给定（未归一化）方向移动，受墙/掩体阻挡并应用减速倍率。
+   */
+  private moveDirection(
+    unit: EnemyUnit,
+    moveX: number,
+    moveY: number,
+    speed: number,
+    stepSeconds: number,
+    context: EnemyStepContext,
+  ): void {
+    const length = Math.hypot(moveX, moveY);
+    if (length === 0) return;
+    const multiplier = context.speedMultiplier?.(unit.id) ?? 1;
+    const distance = speed * Math.max(0, multiplier) * stepSeconds;
+    const moved = moveCircleWithCollision(
+      this.layout,
+      unit.combatant.x,
+      unit.combatant.y,
+      unit.radius,
+      (moveX / length) * distance,
+      (moveY / length) * distance,
+    );
+    unit.combatant.x = moved.x;
+    unit.combatant.y = moved.y;
   }
 
   private moveAway(
@@ -1056,14 +1830,18 @@ export class EnemySystem {
 
     for (const unit of this.units) {
       if (!unit.combatant.isAlive) continue;
-      if (context.isStunned?.(unit.id)) continue;
+      if (this.isControlLocked(unit, context)) continue;
 
       const contact = this.contactDamage(unit);
       if (!contact) continue;
 
-      // 只有追击/重装会改打更近的召唤物；冲锋仍按冲刺路径攻击玩家。
+      // 只有近战类行为会改打更近的召唤物；冲锋仍按冲刺路径攻击玩家。
       const target =
-        unit.enemy.behavior === 'chase' || unit.enemy.behavior === 'heavy'
+        unit.enemy.behavior === 'chase' ||
+        unit.enemy.behavior === 'flank' ||
+        unit.enemy.behavior === 'heavy' ||
+        unit.enemy.behavior === 'guard' ||
+        unit.enemy.behavior === 'summon'
           ? this.meleeTarget(unit, context)
           : { point: context.player, kind: 'player' as const, radius: context.player.radius };
       if (target.kind === 'player' && context.player.isInvulnerable) continue;
@@ -1133,6 +1911,7 @@ export class EnemySystem {
     this.spawnQueue.length = 0;
 
     this.bossCombat?.clearBlasts();
+    this.clearEliteBlasts();
     return { enemyIds, projectileIds, telegraphIds };
   }
 }

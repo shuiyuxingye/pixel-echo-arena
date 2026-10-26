@@ -1,10 +1,16 @@
 {
   "game_zip": "output/share/像素回响-轻量游戏包.zip",
-  "game_zip_bytes": 486789,
-  "game_html_bytes": 1719067,
+  "game_zip_bytes": 3471790,
+  "game_zip_within_limit": null,
+  "size_policy": "quality-first-no-hard-cap",
+  "game_html_bytes": 6075825,
   "docs_zip": "output/share/像素回响-图文文档包.zip",
-  "docs_zip_bytes": 736173,
-  "pdf_count": 3,
+  "docs_zip_bytes": 3067106,
+  "pdf_count": 0,
   "svg_count": 12,
-  "markdown_count": 4
+  "markdown_count": 4,
+  "skipped_checks": [
+    "US-066 人工 18 波试玩",
+    "US-051 性能/泄漏检测"
+  ]
 }

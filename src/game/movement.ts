@@ -124,6 +124,18 @@ export function facingFromVector(vector: MoveVector): Facing | null {
 }
 
 /**
+ * 任意方向最近的八向；用于轻自瞄后的施法帧，不影响弹体的真实飞行方向。
+ * 零向量返回 null（调用方沿用原面向）。
+ */
+export function nearestFacing(vector: MoveVector): Facing | null {
+  if (!(Number.isFinite(vector.x) && Number.isFinite(vector.y))) return null;
+  if (vector.x === 0 && vector.y === 0) return null;
+  const angle = Math.atan2(vector.y, vector.x);
+  const index = Math.round(angle / (Math.PI / 4));
+  return FACING_LIST[((index % 8) + 8) % 8] ?? null;
+}
+
+/**
  * 八向面向映射到精灵表的四向行走行。
  * 斜向在四向素材中没有专用行走帧，取水平行表达。
  */
@@ -171,6 +183,8 @@ export class PlayerMotion {
   private readonly pressedKeys = new Set<string>();
   private keyBindings: KeyBindings;
   private moveSpeedMultiplier = 1;
+  /** 外部来源（E07 逆风齿轮）的闪避冷却倍率；只影响之后发起的闪避。 */
+  private dodgeCooldownMultiplier = 1;
 
   private x: number;
   private y: number;
@@ -210,6 +224,18 @@ export class PlayerMotion {
   /** 闪避前 0.15 秒无敌。 */
   get isInvulnerable(): boolean {
     return this.dodgeInvulnerableSeconds > 0;
+  }
+
+  /**
+   * 授予额外无敌时间（E03 不屈圣印的 2 秒保命窗口）。
+   * 与闪避无敌共用同一计时，取两者剩余时间的较大值，不互相覆盖。
+   */
+  grantInvulnerability(seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    this.dodgeInvulnerableSeconds = Math.max(
+      this.dodgeInvulnerableSeconds,
+      seconds,
+    );
   }
 
   get dodgeCooldownRemaining(): number {
@@ -271,6 +297,15 @@ export class PlayerMotion {
       Number.isFinite(multiplier) && multiplier > 0 ? Math.max(0.4, multiplier) : 1;
   }
 
+  /**
+   * 更新闪避冷却倍率（E07 低血时 −25% → 0.75）。
+   * 只影响之后发起的闪避，不追溯当前剩余冷却。
+   */
+  setDodgeCooldownMultiplier(multiplier: number): void {
+    this.dodgeCooldownMultiplier =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
   releaseKey(code: string): void {
     this.pressedKeys.delete(code);
   }
@@ -286,6 +321,12 @@ export class PlayerMotion {
     this.dodgeRemainingSeconds = 0;
     this.dodgeInvulnerableSeconds = 0;
     this.moving = false;
+  }
+
+  /** 进入下一波：结束进行中的闪避并清空冷却，闪避立即可用。 */
+  resetDodgeForWaveStart(): void {
+    this.cancelDodge();
+    this.dodgeCooldownSeconds = 0;
   }
 
   /**
@@ -305,8 +346,12 @@ export class PlayerMotion {
     }
 
     this.dodgeRemainingSeconds = DODGE.durationSeconds;
-    this.dodgeInvulnerableSeconds = DODGE.invulnerableSeconds;
-    this.dodgeCooldownSeconds = DODGE.cooldownSeconds;
+    // 与 grantInvulnerability 共用计时：闪避不得缩短已有的更长无敌。
+    this.dodgeInvulnerableSeconds = Math.max(
+      this.dodgeInvulnerableSeconds,
+      DODGE.invulnerableSeconds,
+    );
+    this.dodgeCooldownSeconds = DODGE.cooldownSeconds * this.dodgeCooldownMultiplier;
     this.moving = true;
     return true;
   }
@@ -327,7 +372,6 @@ export class PlayerMotion {
         this.dodgeDirection.y * DODGE.speed * activeSeconds,
       );
       this.dodgeRemainingSeconds = decay(this.dodgeRemainingSeconds, stepSeconds);
-      this.dodgeInvulnerableSeconds = decay(this.dodgeInvulnerableSeconds, stepSeconds);
       this.moving = true;
     } else if (input.x !== 0 || input.y !== 0) {
       this.moveWithCollision(
@@ -339,6 +383,8 @@ export class PlayerMotion {
       this.moving = false;
     }
 
+    // 无敌计时与闪避状态解耦：E03 等外部来源在非闪避时授予的无敌同样要到期。
+    this.dodgeInvulnerableSeconds = decay(this.dodgeInvulnerableSeconds, stepSeconds);
     this.dodgeCooldownSeconds = decay(this.dodgeCooldownSeconds, stepSeconds);
   }
 

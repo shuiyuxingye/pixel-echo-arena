@@ -1,46 +1,60 @@
-# 像素回响：泰拉试炼
+# 像素回响：四人试炼
 
-单人俯视角像素动作肉鸽原型。从维什戴尔 / 阿米娅 / 塞雷娅 / 缪尔赛思中选一人，在废弃
-实验场中走位、攻击、闪避，通过 9 波敌人与双阶段 Boss，用升级三选一和 24 种机制强化
-形成构筑。
+单人俯视角像素动作肉鸽原型。从爆破手 / 术士 / 骑士 / 战术家中选一人，在竞技场中走位、
+攻击、闪避，打 18 波敌人并在波间商店里构筑。第 18 波是唯一 Boss；升级给海克斯三选一，
+宝箱给永久道具，精英给核心，商店卖道具/药剂/自由技能，三件道具可以合成成品。
 
 技术栈：TypeScript + Vite + Phaser 3（战斗渲染）+ Tailwind CSS + daisyUI 5（DOM 菜单），
 测试使用 Vitest。单页静态前端，无后端、无数据库、无 API Key，运行时不需要联网获取
 模型、字体或素材。
 
-## 下一版：V0.2 商店与构筑（设计中）
+## 当前版本：V0.3 星盘熔炉美术版
 
-当前可玩版本仍是V0.1。新版准备把四职业改名为爆破手、术士、骑士、战术家，重绘人物与怪物；增加18波、波间商店、U/I自由技能、带代价的道具、宝箱结算、精英核心、三件合成与48种海克斯。
+![实际游戏主菜单](docs/art/screenshots/menu.png)
 
-- [新版PRD](tasks/prd-v0.2-buildcraft.md)
+保留V0.2的18波、商店、两自由技能栏、宝箱、核心、六条合成与48种海克斯规则；本次由Codex直接完成美术，不启动Ralph。
+四职业四向动作、八种怪物与Boss、遗迹地板、68枚基础道具/技能/核心图标、四类动画特效与暖金界面已接入实际游戏。
+全部106条内容均有图标映射；48种海克斯复用对应机制图标并保留独立名称/品质框，不冒充106张独立绘制原画。
+
+[美术清单与截图](docs/art/README.md) · [生成提示词](docs/art/prompts.md)
+
+V0.1 的 9 波 / 24 种强化为旧基线，旧存档与旧成绩不导入 V0.2。设计与内容参数：
+
+- [PRD](tasks/prd-v0.2-buildcraft.md)
 - [系统与数值](docs/design/v0.2/01-systems-and-balance.md)
 - [道具、技能、配方与海克斯目录](docs/design/v0.2/02-content-catalog.md)
-- [新美术与商店界面设计](docs/design/v0.2/03-art-and-interface.md)
-- [旧PRD归档](tasks/archive/v0.1/README.md)
+- [占位显示与功能界面](docs/design/v0.2/03-art-and-interface.md)
+- [延期美术方向](docs/design/v0.2/deferred-art-direction.md)
+- [旧 PRD 归档](tasks/archive/v0.1/README.md)
 
-以上是设计稿与概念母版，尚未替换到游戏中。公开仓库采用[干净发布快照](docs/PUBLISHING.md)，不包含本机完整自动开发记录。
+公开仓库采用[干净发布快照](docs/PUBLISHING.md)，不包含本机完整自动开发记录。
+
+## 交付状态（2026-10-26）
+
+V0.2逻辑队列已收尾：64项中62项通过，2项由用户主动跳过。V0.3美术由Codex直接实施：类型检查、lint和1675项单元测试通过；分享构建按用户要求取消包体硬上限，保留素材完整内联与分发安全检查。两项未验边界继续保留：
+
+- **US-066 人工 18 波普通构筑试玩**：用户明确要求跳过，未执行，不视为通关验证。
+- **US-051 性能/泄漏检测**：用户明确要求跳过，未运行 60 秒压力与 5 次重开检查。
+
+因此本项目**不宣称**“全部 64 项通过”“真人已通关”“V0.2 已达到 50 FPS 或无泄漏”。
+构建与内联检查的证据在 `output/share/build-report.json`；分享产物见下文。
 
 ## 先选你的使用方式
 
-**只想玩或发给朋友**：使用 `output/share/game/像素回响.html`，或解压 `output/share/像素回响-轻量游戏包.zip` 后双击 HTML。无需安装 Node、Python 或 Claude。浏览器存档留在本机，不随游戏文件分享。
+**只想玩或发给朋友**：使用 `output/share/game/像素回响.html`，或解压
+`output/share/像素回响-轻量游戏包.zip` 后双击 HTML。无需安装 Node、Python 或 Claude。
+浏览器存档留在本机，不随游戏文件分享。单HTML与ZIP不设硬体积上限，准确字节数见构建报告，运行资源全部内联。
 
 **看图文说明**：从 [人类文档入口](docs/human/README.md) 开始。
 
 | 文档 | Markdown | PDF |
 | --- | --- | --- |
-| 游戏说明书 | [源文件](docs/human/01-游戏说明书.md) | [图文版](output/pdf/01-游戏说明书.pdf) |
-| 分享与启动指南 | [源文件](docs/human/02-分享与启动指南.md) | [图文版](output/pdf/02-分享与启动指南.pdf) |
-| 项目现状与维护指南 | [源文件](docs/human/03-项目现状与维护指南.md) | [图文版](output/pdf/03-项目现状与维护指南.pdf) |
+| 游戏说明书 | [源文件](docs/human/01-游戏说明书.md) | V0.1 历史 PDF，未随 V0.2 分享包 |
+| 分享与启动指南 | [源文件](docs/human/02-分享与启动指南.md) | V0.1 历史 PDF，未随 V0.2 分享包 |
+| 项目现状与维护指南 | [源文件](docs/human/03-项目现状与维护指南.md) | V0.1 历史 PDF，未随 V0.2 分享包 |
 
-图示源文件为 SVG，放在 `docs/human/figures/`。自动开发过程文档保留在原目录，不进入轻量分享包。
-
-## 交付状态
-
-2026-10-20：35 条故事中 34 条通过，US-026a（四角色完整通关与流程自动试玩）由用户人工检查后主动设为 blocked；自动开发循环已结束。
-US-026b 已完成：修复重开时的设置订阅与事件监听清理，589 个测试及 typecheck/lint/build 通过；规定压力场景采样 60 秒平均 58.25 FPS，连续 5 次重开计数稳定。
-验收明细见 [最终性能与重开记录](docs/perf-runs/perf-2026-10-20T02-31-47-562Z.json)。
-
-现在玩游戏只需启动下面的开发服务，不必再次运行 Harness。
+V0.1 的 SVG 插图保留在 `docs/human/figures/`，只作操作与流程示意，不代表 V0.2 画面。
+自动开发过程文档保留在原目录，不进入轻量分享包。
 
 ## 源码开发环境
 
@@ -72,6 +86,8 @@ npm run preview -- --port 5343 --strictPort
 | --- | --- |
 | `npm run dev` | 启动 Vite 开发服务（配置默认端口 5343、`strictPort`） |
 | `npm run build` | 类型检查后构建静态产物到 `dist/` |
+| `npm run build:share` | 构建并内联为单文件 `output/share/game/像素回响.html`，做体积/内联静态检查 |
+| `python3 tools/docs/package_delivery.py` | 打包游戏 ZIP 与文档 ZIP（需先运行 `build:share`） |
 | `npm run preview` | 预览构建产物（配置默认端口 5343、`strictPort`） |
 | `npm run typecheck` | TypeScript 严格类型检查（不产出文件） |
 | `npm run lint` | ESLint 检查 |
@@ -79,12 +95,15 @@ npm run preview -- --port 5343 --strictPort
 | `npm run perf` | 性能与重开泄漏检查（需先启动开发服务） |
 | `npm run assets` | 重新生成 `public/assets/` 下的像素资源 |
 
-性能与重开泄漏检查（需先启动开发服务）：
+性能与重开泄漏检查（**本轮由用户跳过，不执行**；保留命令供未来单独安排）：
 
 ```bash
 npm run perf
 # 等价于 node tools/perf/perf-check.mjs
 ```
+
+V0.1 曾记录 60 秒平均 58.25 FPS 与 5 次重开计数稳定；这些是旧基线证据，**不适用于
+V0.2**，本项目不宣称 V0.2 达到 50 FPS 或无泄漏。
 
 ## 玩法与操作
 
@@ -96,15 +115,20 @@ npm run perf
 | 战斗 | `W A S D` | 八方向移动，对角线速度归一化 |
 | 战斗 | `J`（可按住） | 沿当前面向持续普通攻击，允许空射 |
 | 战斗 | `K` / `L` | 角色战术技能 / 招牌技能 |
+| 战斗 | `U` / `I` | 商店购买的自由技能，各自独立冷却 |
 | 战斗 | `Space` | 按移动方向闪避（0.18 秒、前 0.15 秒无敌、冷却 3 秒） |
 | 战斗 | `Tab` | 切换前方扇区提示目标，不改变面向 |
-| 强化 | `A/D`、`1/2/3`、`Enter`、`R` | 移动焦点 / 直接选卡 / 确认 / 重抽 |
-| 各界面 | `Esc` | 暂停或返回；强化不可用 Esc 跳过 |
+| 战斗 | `B` | 打开/关闭构筑面板（打开时暂停） |
+| 海克斯 | `A/D`、`1/2/3`、`Enter`、`R` | 移动焦点 / 直接选卡 / 确认 / 重抽 |
+| 商店 | 方向键、`Enter`、`R`、`F`、`Tab`、`Space` | 选卡 / 购买确认 / 重抽 / 锁定 / 切页 / 下一波 |
+| 各界面 | `Esc` | 暂停或返回；海克斯选择不可用 Esc 跳过 |
 
-- 9 波普通/Boss 波次，第 9 波为双阶段 Boss。
-- 升级三选一与 24 种机制强化，包含通用与四角色专属卡。
-- 死亡或击败 Boss 后结算，记录最近 10 局成绩。
-- 波中/选卡进度自动续局；刷新后主菜单可「继续试炼」。
+- 18 波：第 1–17 波清空或倒计时结束过关并进入商店；第 18 波必须击败 Boss。
+- 第 6/9/12/15 波为精英波；宝箱在 2/5/8/11/14/17 波出现。
+- 等级上限 15，海克斯三选一在 2/4/6/8/10/12/14 级出现；48 种海克斯按职业池筛选。
+- 构筑来源：永久道具、药剂、自由技能、精英核心、配方成品；按 `B` 查看净属性与来源分组。
+- 死亡或击败第 18 波 Boss 后结算，记录最近 10 局成绩。
+- 波中/选卡/波末奖励/商店进度自动续局；刷新后主菜单可「继续试炼」。
 - 设置支持静音、屏震、减少动态效果与战斗键位重绑。
 
 ## 开发场景
@@ -112,21 +136,27 @@ npm run perf
 开发环境支持固定种子与场景参数（生产构建会移除入口）：
 
 ```text
-?dev=1&seed=20261020&character=amiya&wave=5&enemies=chaser:3,shooter:2&upgrades=W01,W02
+?dev=1&seed=20261020&character=amiya&wave=5&enemies=blob:3,spitter:2&hexes=H01,H02
 ```
 
-- `seed`：固定本局强化随机序列；
+- `seed`：固定本局随机序列；
 - `character`：指定角色并跳过菜单/选角；
-- `wave`：起始波（1–9）；
+- `wave`：起始波（1–18）；
 - `enemies`：覆盖起始波名册，格式 `id:数量`；
-- `upgrades`：开局直接授予强化，重复 ID 按层数逐次授予；
-- `perf=1`：隔离性能场景，维持 80 敌人 / 40 敌弹 / 3 流形同屏。
+- `hexes` / `items` / `cores` / `crafted`：开局授予海克斯、道具、核心或配方成品；
+- `shopOps` / `shopPotion` / `track` / `craft`：在商店与合成面板复现交易与配方场景；
+- `gold` / `maxHealth` / `damageTaken` / `waveSpeed` / `eliteOnly`：受控数值场景；
+- `perf=1`：隔离性能场景，维持 80 敌人 / 40 敌弹 / 3 流形同屏（本轮跳过，不运行）。
 
-只读状态通过 `window.__PIXEL_ECHO_DEV__.getSnapshot()`；实体与输入监听计数通过
+完整参数与边界见 `src/game/dev-scenario.ts` 文件头注释。只读状态通过
+`window.__PIXEL_ECHO_DEV__.getSnapshot()`；实体与输入监听计数通过
 `window.__PIXEL_ECHO_DEV__.getDiagnostics()`；帧率采样与 DOM 监听计数由
 `window.__PIXEL_ECHO_DIAG__` 提供。以上桥只读，生产构建不包含。
 
-## 性能与泄漏检查
+## 性能与泄漏检查（本轮跳过）
+
+**US-051 已由用户明确跳过。** 以下命令与流程保留给未来单独安排，本轮不运行，也不引用
+V0.1 的旧 FPS/监听数据作为 V0.2 结论。
 
 `tools/perf/perf-check.mjs` 通过 agent-browser（`--session` + 完整 `--cdp`）打开隔离
 性能场景：
@@ -143,12 +173,9 @@ npm run perf
 
 ## 资源与素材来源
 
-全部像素资源为项目内自制，由无第三方依赖的 `tools/generate-assets.mjs` 直接编码 PNG：
-
-- 竞技场：`public/assets/arena/floor.png`（1440×960）、`wall.png`、`cover.png`（32×32）；
-- 四角色 64×64 Q 版精灵表：`public/assets/sprites/player-*.png`（512×320，8 列 × 5 行）；
-- 音效在浏览器内用 Web Audio 振荡器实时合成，无音频文件；
-- 不使用外链字体、素材或运行时网络请求。
+V0.3用内置ImageGen生成源图，再由`tools/art/build-art.mjs`切分、最近邻像素整理与装配；源图保存在`art/source/`，生产PNG位于`public/assets/art/`。
+四角色/怪物/场景/道具/技能/特效已实际接线；墙与掩体由可编辑代码绘制。所有运行时素材本地内联，不使用外链字体。
+`npm run art:build`从已保存源图重建；V0.2旧资源保留原目录。音效继续在浏览器内合成。
 
 完整清单、生成方式与许可说明见 `docs/素材来源说明.md`。
 
@@ -165,14 +192,21 @@ src/game/scenes/ArenaScene.ts Phaser 竞技场场景（渲染 + 输入 + HUD 接
 src/game/dev-scenario.ts      开发场景参数解析（含 perf 隔离场景）
 src/game/dev-snapshot.ts      只读状态快照桥
 src/game/dev-diagnostics.ts   帧率采样、DOM 监听计数与存活实例计数
+src/game/data/               角色、敌人、波次、道具/技能/海克斯等纯数据
+src/game/run-save.ts         V2 续局快照与存储命名空间
+src/game/shop-*.ts           商店货架、交易、界面视图
+src/game/build-panel.ts      战斗内构筑面板（来源分组与净属性）
 src/ui/                       DOM 菜单与覆盖层
 src/style.css                 Tailwind CSS + daisyUI 样式
 public/assets/                自制像素资源
 tools/generate-assets.mjs     无依赖的 PNG 资源生成脚本
-tools/perf/perf-check.mjs     性能与重开泄漏检查
+tools/release/build-share.mjs 单文件 HTML 内联与分享构建报告
+tools/docs/package_delivery.py 游戏 ZIP / 文档 ZIP 打包
+tools/perf/perf-check.mjs     性能与重开泄漏检查（本轮跳过）
 tests/                        Vitest 单元测试
 docs/演示流程脚本.md           人工演示与浏览器验收步骤
 docs/素材来源说明.md           资源清单、生成方式与许可
+output/share/                 单文件 HTML、ZIP、构建报告与交付清单
 ```
 
 ## 约定

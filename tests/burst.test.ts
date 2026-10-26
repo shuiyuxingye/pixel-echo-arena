@@ -99,6 +99,20 @@ describe('爆裂黎明弹药', () => {
     expect(burst.tryActivate()).toBe(true);
     expect(burst.ammoRemaining).toBe(6);
   });
+
+  it('进入下一波清空剩余冷却与弹匣，L 立即就绪', () => {
+    const burst = system();
+    burst.tryActivate();
+    burst.consumeShot();
+    burst.step(3);
+
+    burst.resetForWaveStart();
+    expect(burst.cooldownRemaining).toBe(0);
+    expect(burst.ammoRemaining).toBe(0);
+    expect(burst.isActive).toBe(false);
+    expect(burst.tryActivate()).toBe(true);
+    expect(burst.ammoRemaining).toBe(6);
+  });
 });
 
 describe('强化攻击定义', () => {
@@ -154,5 +168,18 @@ describe('场景接入', () => {
     expect(source).toContain('consumeShot');
     expect(source).toContain('fireIntervalSeconds');
     expect(source).toContain('ammoHud');
+  });
+});
+
+describe('I15 技能持续时间倍率', () => {
+  it('延长弹药失效时间，不影响冷却与每发间隔', () => {
+    const burst = system();
+    burst.setDurationMultiplier(1.15);
+    expect(burst.tryActivate()).toBe(true);
+    expect(burst.cooldownRemaining).toBeCloseTo(30, 12);
+    burst.step(22.9);
+    expect(burst.ammoRemaining).toBe(6);
+    burst.step(0.2);
+    expect(burst.ammoRemaining).toBe(0);
   });
 });

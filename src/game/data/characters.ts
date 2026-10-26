@@ -8,6 +8,22 @@ export type CharacterId = 'vishdal' | 'amiya' | 'saria' | 'muelsyse';
 /** 主菜单进入选角页时的默认焦点角色（docs/game-design.md §5.1）。 */
 export const DEFAULT_CHARACTER_ID: CharacterId = 'vishdal';
 
+/** V0.2 玩家可见的四职业名；界面只使用这一份映射。 */
+export const CHARACTER_DISPLAY_NAMES: Readonly<Record<CharacterId, string>> = {
+  vishdal: '爆破手',
+  amiya: '术士',
+  saria: '骑士',
+  muelsyse: '战术家',
+};
+
+/** V0.1 旧显示名；只用于内部兼容映射与历史档案，不再进入界面。 */
+export const LEGACY_CHARACTER_NAMES: Readonly<Record<CharacterId, string>> = {
+  vishdal: '维什戴尔',
+  amiya: '阿米娅',
+  saria: '塞雷娅',
+  muelsyse: '缪尔赛思',
+};
+
 export type DamageType = 'physical' | 'magic' | 'true';
 
 export interface AttackDefinition {
@@ -74,11 +90,11 @@ export interface CharacterDefinition {
 export const CHARACTER_LIST: readonly CharacterDefinition[] = [
   {
     id: 'vishdal',
-    name: '维什戴尔',
-    maxHealth: 110,
-    armor: 8,
+    name: CHARACTER_DISPLAY_NAMES.vishdal,
+    maxHealth: 120,
+    armor: 10,
     magicResist: 0,
-    moveSpeed: 150,
+    moveSpeed: 160,
     radius: 12,
     attack: {
       key: 'J',
@@ -135,11 +151,11 @@ export const CHARACTER_LIST: readonly CharacterDefinition[] = [
   },
   {
     id: 'amiya',
-    name: '阿米娅',
-    maxHealth: 100,
+    name: CHARACTER_DISPLAY_NAMES.amiya,
+    maxHealth: 110,
     armor: 0,
     magicResist: 0.15,
-    moveSpeed: 165,
+    moveSpeed: 175,
     radius: 12,
     attack: {
       key: 'J',
@@ -180,20 +196,20 @@ export const CHARACTER_LIST: readonly CharacterDefinition[] = [
   },
   {
     id: 'saria',
-    name: '塞雷娅',
-    maxHealth: 180,
+    name: CHARACTER_DISPLAY_NAMES.saria,
+    maxHealth: 200,
     armor: 35,
     magicResist: 0.1,
-    moveSpeed: 140,
+    moveSpeed: 150,
     radius: 12,
     attack: {
       key: 'J',
       name: '盾击',
       intervalSeconds: 0.55,
-      range: 70,
+      range: 82,
       damage: 26,
       damageType: 'physical',
-      arcDegrees: 100,
+      arcDegrees: 110,
       knockback: 12,
     },
     skillK: {
@@ -228,11 +244,11 @@ export const CHARACTER_LIST: readonly CharacterDefinition[] = [
   },
   {
     id: 'muelsyse',
-    name: '缪尔赛思',
-    maxHealth: 105,
+    name: CHARACTER_DISPLAY_NAMES.muelsyse,
+    maxHealth: 125,
     armor: 5,
     magicResist: 0.1,
-    moveSpeed: 165,
+    moveSpeed: 175,
     radius: 12,
     attack: {
       key: 'J',

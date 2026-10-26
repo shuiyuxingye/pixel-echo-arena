@@ -702,7 +702,7 @@
 <rect x="130.5" y="185.0" width="2.5" height="2.5" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
 <rect x="168.0" y="185.0" width="2.5" height="2.5" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
 <rect x="83.0" y="187.5" width="50.0" height="2.5" rx="0" fill="#1b1720" stroke="none" stroke-width="1"/>
-<text x="210" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#DF9D38" text-anchor="start">塞雷娅</text>
+<text x="210" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#DF9D38" text-anchor="start">骑士</text>
 <text x="210" y="135" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="start">贴近盾击</text>
 <text x="210" y="170" font-family="STHeiti, PingFang SC, sans-serif" font-size="20" fill="#51636C" text-anchor="start">急救续航 → 领域控场</text>
 <rect x="510" y="20" width="470" height="230" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
@@ -1394,7 +1394,7 @@
 <rect x="600.5" y="185.0" width="20.0" height="2.5" rx="0" fill="#358866" stroke="none" stroke-width="1"/>
 <rect x="620.5" y="185.0" width="2.5" height="2.5" rx="0" fill="#16211f" stroke="none" stroke-width="1"/>
 <rect x="573.0" y="187.5" width="50.0" height="2.5" rx="0" fill="#16211f" stroke="none" stroke-width="1"/>
-<text x="700" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#087F8C" text-anchor="start">缪尔赛思</text>
+<text x="700" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#087F8C" text-anchor="start">战术家</text>
 <text x="700" y="135" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="start">切换流形</text>
 <text x="700" y="170" font-family="STHeiti, PingFang SC, sans-serif" font-size="20" fill="#51636C" text-anchor="start">分裂或承伤 → 控制</text>
 </svg>

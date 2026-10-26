@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ASSET_PATHS } from '../src/game/config';
 import { CHARACTER_LIST, getCharacter, type CharacterId } from '../src/game/data';
 import {
-  CHARACTER_PREVIEW_SCALE,
   CHARACTER_SELECT_ENTRIES,
   CHARACTER_SELECT_ORDER,
   CharacterSelectState,
@@ -19,7 +18,7 @@ import {
   loadUserSettings,
   saveUserSettings,
 } from '../src/game/settings';
-import { PLAYER_ART } from '../src/game/player-art';
+import { playerArtFor } from '../src/game/player-art';
 import { mountCharacterSelect } from '../src/ui/character-select';
 
 const ROOT = process.cwd();
@@ -80,7 +79,7 @@ describe('四角色选择映射', () => {
     }
   });
 
-  it('每名角色展示自己的姓名、定位、J/K/L 与被动，预览复用场内 64×64 精灵表', () => {
+  it('每名角色展示自己的姓名、定位、J/K/L 与被动，预览复用场内精灵表', () => {
     for (const id of CHARACTER_SELECT_ORDER) {
       const character = getCharacter(id);
       const entry = getCharacterSelectEntry(id);
@@ -105,13 +104,14 @@ describe('四角色选择映射', () => {
       });
 
       expect(entry.preview.path).toBe(PREVIEW_PATHS[id]);
-      expect(entry.preview.sheetWidth).toBe(512);
-      expect(entry.preview.sheetHeight).toBe(320);
-      expect(entry.preview.frameWidth).toBe(PLAYER_ART.frameWidth);
-      expect(entry.preview.frameHeight).toBe(PLAYER_ART.frameHeight);
-      expect(entry.preview.scale).toBe(CHARACTER_PREVIEW_SCALE);
-      expect(entry.preview.width).toBe(64 * CHARACTER_PREVIEW_SCALE);
-      expect(entry.preview.height).toBe(64 * CHARACTER_PREVIEW_SCALE);
+      const art = playerArtFor(id);
+      expect(entry.preview.sheetWidth).toBe(art.sheetWidth);
+      expect(entry.preview.sheetHeight).toBe(art.sheetHeight);
+      expect(entry.preview.frameWidth).toBe(art.frameWidth);
+      expect(entry.preview.frameHeight).toBe(art.frameHeight);
+      expect(entry.preview.scale).toBe(art.previewScale);
+      expect(entry.preview.width).toBe(art.frameWidth * art.previewScale);
+      expect(entry.preview.height).toBe(art.frameHeight * art.previewScale);
     }
   });
 
@@ -197,7 +197,7 @@ describe('选角页键盘与焦点', () => {
       );
       expect(art?.style.backgroundPosition).toBe('0px 0px');
       expect(art?.style.height).toBe(`${entry.preview.height}px`);
-      expect(entry.preview.scale).toBe(4);
+      expect(entry.preview.scale).toBe(playerArtFor(entry.id).previewScale);
     }
 
     expect(document.activeElement?.getAttribute('data-character-id')).toBe('saria');
@@ -333,7 +333,7 @@ describe('选角页接入', () => {
     const html = readFileSync(resolve(ROOT, 'index.html'), 'utf8');
     expect(html).toContain('id="character-select-overlay"');
     expect(html).toContain('id="character-select-list"');
-    expect(html).toContain('选择干员');
+    expect(html).toContain('选择你的回响');
 
     const appSource = readFileSync(resolve(ROOT, 'src/app.ts'), 'utf8');
     expect(appSource).toContain('mountCharacterSelect');

@@ -34,6 +34,8 @@ export interface EnemyUnitWorldSnapshot {
   readonly y: number;
   readonly health: number;
   readonly shield: number;
+  /** Boss 二阶段增援：击杀不产生金币/经验；旧快照缺省为 false。 */
+  readonly summoned?: boolean;
   readonly activity: EnemyActivityWorld;
   readonly windupRemaining: number;
   readonly dashRemaining: number;
@@ -41,6 +43,16 @@ export interface EnemyUnitWorldSnapshot {
   readonly dashY: number;
   readonly attackCooldown: number;
   readonly chargeCooldown: number;
+  /** 下一次精英爆破的剩余冷却；旧版快照没有该字段时按 0 处理。 */
+  readonly eliteBlastCooldown?: number;
+  /** 盾壳蟹朝向（弧度），弱点在朝向背面；旧快照缺省为 0。 */
+  readonly facingAngle?: number;
+  /** 灯灵的下次治疗冷却；旧快照缺省按 4 秒处理。 */
+  readonly healCooldown?: number;
+  /** 巢母的下次召唤冷却；旧快照缺省按 8 秒处理。 */
+  readonly summonCooldown?: number;
+  /** 单个巢母终生已召唤的幼虫数；旧快照缺省为 0。 */
+  readonly larvaeSummoned?: number;
   readonly avoidSeconds: number;
   readonly avoidSign: 1 | -1;
 }
@@ -50,6 +62,20 @@ export interface EnemyTelegraphWorldSnapshot {
   readonly enemy: EnemyDefinition;
   readonly x: number;
   readonly y: number;
+  readonly remainingSeconds: number;
+  /** 待落地的 Boss 增援；旧快照缺省为 false。 */
+  readonly summoned?: boolean;
+}
+
+/** 精英地面爆破预警；预警圈与落地共用同一 `id`。 */
+export interface EliteBlastWorldSnapshot {
+  readonly id: number;
+  readonly ownerId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly damage: number;
+  readonly damageType: DamageType;
   readonly remainingSeconds: number;
 }
 
@@ -101,6 +127,9 @@ export interface EnemySystemWorldSnapshot {
   readonly units: readonly EnemyUnitWorldSnapshot[];
   readonly telegraphs: readonly EnemyTelegraphWorldSnapshot[];
   readonly projectiles: readonly EnemyProjectileWorldSnapshot[];
+  /** 精英地面爆破预警；旧版快照没有该字段时为空。 */
+  readonly eliteBlasts?: readonly EliteBlastWorldSnapshot[];
+  readonly nextEliteBlastId?: number;
   readonly boss: BossWorldSnapshot | null;
 }
 
@@ -111,7 +140,8 @@ export interface ProjectilePierceWorldSnapshot {
 
 export interface PlayerProjectileWorldSnapshot {
   readonly id: number;
-  readonly source: 'J' | 'K';
+  /** E08 侧弹、S11 扇射弹与 H21 弹幕单独标记，恢复后仍不参与 J 命中计数。 */
+  readonly source: 'J' | 'K' | 'E08' | 'S11' | 'H21';
   readonly x: number;
   readonly y: number;
   readonly vx: number;
@@ -124,6 +154,12 @@ export interface PlayerProjectileWorldSnapshot {
   readonly facing: Facing;
   readonly pierce: ProjectilePierceWorldSnapshot | null;
   readonly hitTargetIds: readonly string[];
+  /** H14 折返弹的返程标记与剩余次数；旧快照缺省。 */
+  readonly returning?: boolean;
+  readonly returnCharges?: number;
+  readonly returnDamageRatio?: number;
+  /** H30 烟花谢幕：本发是爆裂黎明最后一发，命中后触发 3 次波纹；旧快照缺省。 */
+  readonly h30Finale?: boolean;
 }
 
 export interface SoulWorldSnapshot {
@@ -143,6 +179,8 @@ export interface SoulWorldSnapshot {
 
 export interface GrenadeWorldSnapshot {
   readonly elapsedSeconds: number;
+  /** I24 已结算的爆炸次数；旧存档缺省按 0。 */
+  readonly explosionCount?: number;
   readonly marks: readonly string[];
   readonly stuns: readonly { readonly targetId: string; readonly remainingSeconds: number }[];
   readonly pending: readonly {
@@ -162,6 +200,8 @@ export interface BurstWorldSnapshot {
   readonly ammoRemainingSeconds: number;
   readonly bonusShots: number;
   readonly lastShotRadiusBonus: number;
+  /** H27 三炮齐鸣：本次启动后已射出的强化弹数；旧快照缺省。 */
+  readonly shotsInVolley?: number;
 }
 
 export interface AmiyaWorldSnapshot {
@@ -173,6 +213,8 @@ export interface AmiyaWorldSnapshot {
   readonly chimeraCooldownSeconds: number;
   readonly chimeraRemainingSeconds: number;
   readonly weaknessRemainingSeconds: number;
+  /** H36 奇美拉结束后的禁 J 剩余秒数；旧快照缺省为 0。 */
+  readonly chimeraJLockRemainingSeconds?: number;
   readonly totalJHits: number;
   readonly countedProjectileIds: readonly number[];
   readonly followupPending: boolean;
@@ -208,6 +250,14 @@ export interface MuelsyseControlWorldSnapshot {
   readonly slow: number;
 }
 
+/** E04 幻影的波中快照；旧存档没有该字段时视为不存在。 */
+export interface MuelsyseCorePhantomWorldSnapshot {
+  readonly x: number;
+  readonly y: number;
+  readonly remainingSeconds: number;
+  readonly attackCooldownSeconds: number;
+}
+
 export interface MuelsyseWorldSnapshot {
   readonly form: 'melee' | 'ranged';
   readonly x: number;
@@ -226,8 +276,13 @@ export interface MuelsyseWorldSnapshot {
   readonly nextCopyId: number;
   readonly rangedAttacksSinceCopy: number;
   readonly waterMirrorCooldownRemaining: number;
+  /** H48 形态接力剩余秒数；旧存档缺省。 */
+  readonly formRelayRemainingSeconds?: number;
   readonly healAccumulatorSeconds: number;
   readonly controls: readonly MuelsyseControlWorldSnapshot[];
+  /** E04 幻影剩余计时；未拥有核心或旧存档缺省。 */
+  readonly corePhantomTimerSeconds?: number;
+  readonly corePhantom?: MuelsyseCorePhantomWorldSnapshot | null;
 }
 
 export interface UpgradeEffectsWorldSnapshot {
@@ -356,8 +411,14 @@ function isEnemyDefinition(value: unknown): value is EnemyDefinition {
   if (!isNonNeg(value.contactDamage)) return false;
   if (
     value.behavior !== 'chase' &&
+    value.behavior !== 'flank' &&
+    value.behavior !== 'spit' &&
     value.behavior !== 'shoot' &&
     value.behavior !== 'charge' &&
+    value.behavior !== 'guard' &&
+    value.behavior !== 'mend' &&
+    value.behavior !== 'explode' &&
+    value.behavior !== 'summon' &&
     value.behavior !== 'heavy' &&
     value.behavior !== 'boss'
   ) {
@@ -370,7 +431,20 @@ function isEnemyDefinition(value: unknown): value is EnemyDefinition {
     if (attack.intervalSeconds !== undefined && !isPos(attack.intervalSeconds)) return false;
     if (attack.windupSeconds !== undefined && !isPos(attack.windupSeconds)) return false;
   }
+  if (value.goldReward !== undefined && !isNonNeg(value.goldReward)) return false;
+  if (value.xpReward !== undefined && !isNonNeg(value.xpReward)) return false;
+  if (
+    value.markerGlyph !== undefined &&
+    (typeof value.markerGlyph !== 'string' || value.markerGlyph.length === 0)
+  ) {
+    return false;
+  }
   if (value.elite !== undefined && !isBool(value.elite)) return false;
+  if (value.eliteId !== undefined && typeof value.eliteId !== 'string') return false;
+  if (value.coreRewardId !== undefined && typeof value.coreRewardId !== 'string') {
+    return false;
+  }
+  if (value.eliteWave !== undefined && !isPos(value.eliteWave)) return false;
   return true;
 }
 
@@ -403,6 +477,7 @@ function isEnemyUnit(value: unknown): value is EnemyUnitWorldSnapshot {
     isNum(value.y) &&
     isNonNeg(value.health) &&
     isNonNeg(value.shield) &&
+    (value.summoned === undefined || isBool(value.summoned)) &&
     isActivity(value.activity) &&
     isNonNeg(value.windupRemaining) &&
     isNonNeg(value.dashRemaining) &&
@@ -410,6 +485,11 @@ function isEnemyUnit(value: unknown): value is EnemyUnitWorldSnapshot {
     isNum(value.dashY) &&
     isNonNeg(value.attackCooldown) &&
     isNonNeg(value.chargeCooldown) &&
+    (value.eliteBlastCooldown === undefined || isNonNeg(value.eliteBlastCooldown)) &&
+    (value.facingAngle === undefined || isNum(value.facingAngle)) &&
+    (value.healCooldown === undefined || isNonNeg(value.healCooldown)) &&
+    (value.summonCooldown === undefined || isNonNeg(value.summonCooldown)) &&
+    (value.larvaeSummoned === undefined || isInt(value.larvaeSummoned)) &&
     isNonNeg(value.avoidSeconds) &&
     (value.avoidSign === 1 || value.avoidSign === -1)
   );
@@ -422,6 +502,21 @@ function isTelegraph(value: unknown): value is EnemyTelegraphWorldSnapshot {
     isEnemyDefinition(value.enemy) &&
     isNum(value.x) &&
     isNum(value.y) &&
+    isNonNeg(value.remainingSeconds) &&
+    (value.summoned === undefined || isBool(value.summoned))
+  );
+}
+
+function isEliteBlast(value: unknown): value is EliteBlastWorldSnapshot {
+  return (
+    isRecord(value) &&
+    isInt(value.id, 1) &&
+    isId(value.ownerId) &&
+    isNum(value.x) &&
+    isNum(value.y) &&
+    isPos(value.radius) &&
+    isNonNeg(value.damage) &&
+    isDamageType(value.damageType) &&
     isNonNeg(value.remainingSeconds)
   );
 }
@@ -483,6 +578,8 @@ function isEnemySystem(value: unknown): value is EnemySystemWorldSnapshot {
     isArrayOf(value.units, isEnemyUnit) &&
     isArrayOf(value.telegraphs, isTelegraph) &&
     isArrayOf(value.projectiles, isEnemyProjectile) &&
+    (value.eliteBlasts === undefined || isArrayOf(value.eliteBlasts, isEliteBlast)) &&
+    (value.nextEliteBlastId === undefined || isInt(value.nextEliteBlastId, 1)) &&
     (value.boss === null || isBoss(value.boss))
   );
 }
@@ -500,7 +597,11 @@ function isPlayerProjectile(value: unknown): value is PlayerProjectileWorldSnaps
   return (
     isRecord(value) &&
     isInt(value.id, 1) &&
-    (value.source === 'J' || value.source === 'K') &&
+    (value.source === 'J' ||
+      value.source === 'K' ||
+      value.source === 'E08' ||
+      value.source === 'S11' ||
+      value.source === 'H21') &&
     isNum(value.x) &&
     isNum(value.y) &&
     isNum(value.vx) &&
@@ -512,7 +613,13 @@ function isPlayerProjectile(value: unknown): value is PlayerProjectileWorldSnaps
     isDamageType(value.damageType) &&
     isFacing(value.facing) &&
     (value.pierce === null || isPierce(value.pierce)) &&
-    isArrayOf(value.hitTargetIds, isId)
+    isArrayOf(value.hitTargetIds, isId) &&
+    (value.returning === undefined || typeof value.returning === 'boolean') &&
+    (value.returnCharges === undefined ||
+      (isInt(value.returnCharges) && value.returnCharges >= 0)) &&
+    (value.returnDamageRatio === undefined ||
+      (isNum(value.returnDamageRatio) && value.returnDamageRatio > 0)) &&
+    (value.h30Finale === undefined || typeof value.h30Finale === 'boolean')
   );
 }
 
@@ -545,6 +652,7 @@ function isGrenade(value: unknown): value is GrenadeWorldSnapshot {
   return (
     isRecord(value) &&
     isNonNeg(value.elapsedSeconds) &&
+    (value.explosionCount === undefined || isInt(value.explosionCount)) &&
     isArrayOf(value.marks, isId) &&
     isArrayOf(value.stuns, isTimedId) &&
     isArrayOf(
@@ -569,7 +677,9 @@ function isBurst(value: unknown): value is BurstWorldSnapshot {
     isInt(value.ammo) &&
     isNonNeg(value.ammoRemainingSeconds) &&
     isInt(value.bonusShots) &&
-    isNonNeg(value.lastShotRadiusBonus)
+    isNonNeg(value.lastShotRadiusBonus) &&
+    (value.shotsInVolley === undefined ||
+      (isInt(value.shotsInVolley) && value.shotsInVolley >= 0))
   );
 }
 
@@ -584,6 +694,8 @@ function isAmiya(value: unknown): value is AmiyaWorldSnapshot {
     isNonNeg(value.chimeraCooldownSeconds) &&
     isNonNeg(value.chimeraRemainingSeconds) &&
     isNonNeg(value.weaknessRemainingSeconds) &&
+    (value.chimeraJLockRemainingSeconds === undefined ||
+      isNonNeg(value.chimeraJLockRemainingSeconds)) &&
     isInt(value.totalJHits) &&
     isArrayOf(value.countedProjectileIds, (item): item is number => isInt(item, 1)) &&
     isBool(value.followupPending) &&
@@ -637,6 +749,8 @@ function isMuelsyse(value: unknown): value is MuelsyseWorldSnapshot {
     isInt(value.nextCopyId, 1) &&
     isInt(value.rangedAttacksSinceCopy) &&
     isNonNeg(value.waterMirrorCooldownRemaining) &&
+    (value.formRelayRemainingSeconds === undefined ||
+      isNonNeg(value.formRelayRemainingSeconds)) &&
     isNonNeg(value.healAccumulatorSeconds) &&
     isArrayOf(
       value.controls,
@@ -646,7 +760,16 @@ function isMuelsyse(value: unknown): value is MuelsyseWorldSnapshot {
         isNonNeg(item.stun) &&
         isNonNeg(item.root) &&
         isNonNeg(item.slow),
-    )
+    ) &&
+    (value.corePhantomTimerSeconds === undefined ||
+      isNonNeg(value.corePhantomTimerSeconds)) &&
+    (value.corePhantom === undefined ||
+      value.corePhantom === null ||
+      (isRecord(value.corePhantom) &&
+        isNum(value.corePhantom.x) &&
+        isNum(value.corePhantom.y) &&
+        isNonNeg(value.corePhantom.remainingSeconds) &&
+        isNonNeg(value.corePhantom.attackCooldownSeconds)))
   );
 }
 

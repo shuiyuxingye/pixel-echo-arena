@@ -1,9 +1,9 @@
-像素回响：泰拉试炼 — 单文件分享版 第三方许可说明
+像素回响：四人试炼 — 单文件分享版 第三方许可说明
 =================================================
 
-生成时间：2026-10-20T03:13:43.937Z
-源提交：cde83d4838f585c6ae4692cb623afb5c49e6641c
-产物：像素回响.html（1719067 字节）
+生成时间：2026-10-26T09:17:27.708Z
+源提交：bfd4d8474832d31cfe2802a9439c526bee318cc1
+产物：像素回响.html（6075825 字节）
 
 本单文件包含以下第三方运行时软件/生成的样式。游戏代码与美术资源来自本项目。
 
@@ -115,13 +115,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------
-美术资源
-public/assets/ 下的 PNG 由本项目 tools/generate-assets.mjs 生成，随游戏本体分发。
---------------------------------------------------
-
-
---------------------------------------------------
-EventEmitter3 5.0.4 - MIT License（Phaser 依赖）
+EventEmitter3 5.0.4 — MIT License（Phaser 依赖）
 --------------------------------------------------
 The MIT License (MIT)
 
@@ -144,3 +138,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------
+美术资源
+V0.3源图由内置ImageGen生成，tools/art/build-art.mjs装配生产PNG；随游戏内联分发，来源见docs/素材来源说明.md。
+--------------------------------------------------

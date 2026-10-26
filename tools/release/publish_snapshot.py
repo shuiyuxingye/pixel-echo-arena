@@ -5,7 +5,7 @@ import os,subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[2]
 def git(*args,env=None,input=None):return subprocess.check_output(['git',*args],cwd=ROOT,env=env,input=input)
 roots={'.gitignore','README.md','package.json','package-lock.json','tsconfig.json','vite.config.ts','eslint.config.js','index.html','tools/generate-assets.mjs','docs/素材来源说明.md','docs/演示流程脚本.md','docs/character-art-direction.md','docs/game-design.md','docs/PUBLISHING.md'}
-prefixes=('src/','public/','tests/','tools/docs/','tools/design/','tools/release/','tools/perf/','docs/human/','docs/design/','docs/references/','docs/archive/','docs/perf-runs/','output/pdf/','output/share/game/','.claude/skills/agent-browser-skill/')
+prefixes=('art/source/','tools/art/','docs/art/','src/','public/','tests/','tools/docs/','tools/design/','tools/release/','tools/perf/','docs/human/','docs/design/','docs/references/','docs/archive/','docs/perf-runs/','output/pdf/','output/share/game/','.claude/skills/agent-browser-skill/')
 def allowed(p):
  return p in roots or p.startswith(prefixes) or (p.startswith('tasks/') and p.endswith('.md')) or (p.startswith('output/share/') and (p.endswith('.zip') or p.endswith('delivery-manifest.json')))
 entries=[];excluded=[]

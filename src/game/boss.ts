@@ -1,15 +1,16 @@
 /**
- * Boss「失控实验体」行为（纯逻辑，不依赖 Phaser）。
+ * Boss「裂隙炉王」行为（纯逻辑，不依赖 Phaser）。
  *
- * 规则来源 `docs/game-design.md` §7：
- * - 基础 2600 HP、护甲 20、法抗 15%（数值在 `src/game/data/enemies.ts`）；
- * - 扇形弹幕与地面延迟爆破交替，弹幕始终保留一个可走位缺口；
- * - 地面危险预警 ≥ 0.7 秒；
- * - 生命低于 50% 进入二阶段，增加预警冲锋与每 15 秒召唤 4 个追击者；
- * - 不复制新的 Boss。
+ * 规则来源 `docs/design/v0.2/01-systems-and-balance.md` §普通怪与最终Boss：
+ * - 基础 12000 HP、护甲 20、法抗 15%（数值在 `src/game/data/enemies.ts`）；
+ * - 第一阶段：扇形弹幕与锤击交替，弹幕始终保留一个可走位缺口；
+ * - 半血后进入二阶段：加入横向冲锋，并每 20 秒产生一组 4 只增援；
+ * - 弹体/锤击/冲锋基础伤害 18/35/28，锤击与冲锋预警均 ≥ 0.8 秒；
+ * - 控制（眩晕/束缚）不冻结 Boss，只转换为减速，避免被无限控制锁死；
+ * - 不复制新的 Boss，也不能靠超时跳过。
  *
- * 文档未给出的射速、伤害与半径集中在本文件，只用于让攻击可躲、可读，
- * 不改变 §7 的生命、护甲与法抗基线。
+ * 文档未给出的射速、半径与预警形状集中在本文件，只用于让攻击可躲、可读，
+ * 不改变生命、护甲、法抗与三档伤害基线。
  */
 import type { DamageType, EnemyId } from './data';
 import type { BossWorldSnapshot } from './world-snapshot';
@@ -30,31 +31,40 @@ export const BOSS_ATTACK_INTERVAL_SECONDS = 2.4;
 export const BOSS_FAN_ARC_DEGREES = 120;
 export const BOSS_FAN_SLOTS = 9;
 export const BOSS_FAN_GAP_INDEX = 4;
-export const BOSS_FAN_DAMAGE = 12;
+/** 弹体基础伤害 18（01 §普通怪与最终Boss）。 */
+export const BOSS_FAN_DAMAGE = 18;
 export const BOSS_FAN_DAMAGE_TYPE: DamageType = 'magic';
 export const BOSS_FAN_PROJECTILE_SPEED = 240;
 export const BOSS_FAN_PROJECTILE_RADIUS = 7;
 export const BOSS_FAN_PROJECTILE_RANGE = 700;
 
-/** 地面延迟爆破：以玩家当前位置为基准布置 3 个预警圈。 */
-export const BOSS_BLAST_COUNT = 3;
-export const BOSS_BLAST_WARNING_SECONDS = 0.9;
-export const BOSS_BLAST_RADIUS = 55;
-export const BOSS_BLAST_SPREAD = 70;
-export const BOSS_BLAST_DAMAGE = 20;
-export const BOSS_BLAST_DAMAGE_TYPE: DamageType = 'magic';
+/**
+ * 锤击：在玩家当前位置落下一个大范围预警圈，0.9 秒后砸落。
+ * 预警时间高于规则下限 0.8 秒，伤害取 35 物伤。
+ */
+export const BOSS_HAMMER_WARNING_SECONDS = 0.9;
+export const BOSS_HAMMER_RADIUS = 80;
+export const BOSS_HAMMER_DAMAGE = 35;
+export const BOSS_HAMMER_DAMAGE_TYPE: DamageType = 'physical';
 
-/** 二阶段预警冲锋：0.9 秒前摇后沿锁定方向冲刺 0.45 秒。 */
+/** 二阶段横向冲锋：0.9 秒前摇后沿水平方向冲刺，接触 28 物伤。 */
 export const BOSS_CHARGE_WINDUP_SECONDS = 0.9;
-export const BOSS_CHARGE_DASH_SECONDS = 0.45;
-export const BOSS_CHARGE_SPEED = 360;
-export const BOSS_CHARGE_DAMAGE = 24;
+export const BOSS_CHARGE_DASH_SECONDS = 1.2;
+export const BOSS_CHARGE_SPEED = 480;
+export const BOSS_CHARGE_DAMAGE = 28;
 export const BOSS_CHARGE_DAMAGE_TYPE: DamageType = 'physical';
 
-/** 二阶段召唤：每 15 秒召唤 4 个追击者。 */
-export const BOSS_SUMMON_INTERVAL_SECONDS = 15;
+/** 二阶段增援：每 20 秒一组 4 只，场上最多 8 只，不给金币/经验。 */
+export const BOSS_SUMMON_INTERVAL_SECONDS = 20;
 export const BOSS_SUMMON_COUNT = 4;
-export const BOSS_SUMMON_ENEMY_ID: EnemyId = 'chaser';
+export const BOSS_SUMMON_MAX_ALIVE = 8;
+export const BOSS_SUMMON_ENEMY_ID: EnemyId = 'blob';
+
+/**
+ * 控制转减速：Boss 免疫眩晕/束缚，只按该倍率降低冲锋移动速度。
+ * 与缪尔赛思的 Boss 控制转换共用同一数值。
+ */
+export const BOSS_CONTROL_SLOW_MULTIPLIER = 0.5;
 
 const TIME_EPSILON = 1e-9;
 const DEG_TO_RAD = Math.PI / 180;
@@ -95,6 +105,7 @@ export interface BossFanVolley {
   readonly gapCenterAngle: number;
 }
 
+/** 锤击落点预警；持久化字段仍沿用 `blasts` 以兼容既有续局快照。 */
 export interface BossBlast {
   readonly id: number;
   readonly x: number;
@@ -105,6 +116,7 @@ export interface BossBlast {
   remainingSeconds: number;
 }
 
+/** 锤击落地的结算结果；`id` 与对应预警圈相同。 */
 export interface BossExplosion {
   readonly id: number;
   readonly x: number;
@@ -276,11 +288,9 @@ export class BossCombat {
     if (this.activityValue === 'windup') {
       this.windupRemainingValue = decay(this.windupRemainingValue, stepSeconds);
       if (this.windupRemainingValue <= TIME_EPSILON) {
-        const dx = context.player.x - context.boss.x;
-        const dy = context.player.y - context.boss.y;
-        const length = Math.hypot(dx, dy);
-        this.dashX = length > TIME_EPSILON ? dx / length : 1;
-        this.dashY = length > TIME_EPSILON ? dy / length : 0;
+        // 横向冲锋：只沿水平方向冲刺，朝玩家所在的一侧；预警期间仍可走位躲开。
+        this.dashX = context.player.x >= context.boss.x ? 1 : -1;
+        this.dashY = 0;
         this.activityValue = 'dash';
         this.dashRemainingValue = BOSS_CHARGE_DASH_SECONDS;
       }
@@ -319,7 +329,7 @@ export class BossCombat {
         fanVolleys.push(buildBossFanVolley({ x: context.boss.x, y: context.boss.y }, centerAngle));
         this.attackTimer = BOSS_ATTACK_INTERVAL_SECONDS;
       } else {
-        this.createBlasts(context.boss, context.player);
+        this.createHammerStrike(context.player);
         this.attackTimer = BOSS_ATTACK_INTERVAL_SECONDS;
       }
     }
@@ -380,33 +390,26 @@ export class BossCombat {
     return explosions;
   }
 
-  /** 以玩家当前位置为中心，沿垂直于 Boss→玩家连线的方向铺开 3 个预警圈。 */
-  private createBlasts(boss: BossPoint, player: BossPoint): BossBlast[] {
-    const dx = player.x - boss.x;
-    const dy = player.y - boss.y;
-    const length = Math.hypot(dx, dy);
-    // 垂直于瞄准线；Boss 与玩家重合时退化为水平方向，保证分布确定。
-    const perpX = length > TIME_EPSILON ? -dy / length : 1;
-    const perpY = length > TIME_EPSILON ? dx / length : 0;
-    const blasts: BossBlast[] = [];
-    for (let index = 0; index < BOSS_BLAST_COUNT; index += 1) {
-      const offset = index - (BOSS_BLAST_COUNT - 1) / 2;
-      blasts.push({
-        id: this.nextBlastId,
-        x: player.x + perpX * offset * BOSS_BLAST_SPREAD,
-        y: player.y + perpY * offset * BOSS_BLAST_SPREAD,
-        radius: BOSS_BLAST_RADIUS,
-        damage: BOSS_BLAST_DAMAGE,
-        damageType: BOSS_BLAST_DAMAGE_TYPE,
-        remainingSeconds: BOSS_BLAST_WARNING_SECONDS,
-      });
-      this.nextBlastId += 1;
-    }
-    this.blastsList.push(...blasts);
-    return blasts;
+  /**
+   * 锤击落点：以玩家当前位置为中心的单个大范围预警圈。
+   * 预警与落地共用同一个 `id`，0.9 秒后按范围与通视结算 35 物伤。
+   */
+  private createHammerStrike(player: BossPoint): BossBlast[] {
+    const strike: BossBlast = {
+      id: this.nextBlastId,
+      x: player.x,
+      y: player.y,
+      radius: BOSS_HAMMER_RADIUS,
+      damage: BOSS_HAMMER_DAMAGE,
+      damageType: BOSS_HAMMER_DAMAGE_TYPE,
+      remainingSeconds: BOSS_HAMMER_WARNING_SECONDS,
+    };
+    this.nextBlastId += 1;
+    this.blastsList.push(strike);
+    return [strike];
   }
 
-  /** 一阶段：弹幕 → 爆破循环；二阶段：弹幕 → 爆破 → 冲锋循环。 */
+  /** 一阶段：弹幕 → 锤击循环；二阶段：弹幕 → 锤击 → 横向冲锋循环。 */
   private nextPattern(): 'fan' | 'blast' | 'charge' {
     if (this.phaseValue === 2) {
       const cycle = this.patternIndex % 3;

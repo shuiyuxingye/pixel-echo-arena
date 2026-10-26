@@ -10,6 +10,10 @@
  * W03 亡魂伴行（`docs/game-design.md` §6.3）：上限提升为 2，K 每次仍只召唤一个，
  * 达到上限时替换最早生成者。
  *
+ * H28 魂灵游行（`docs/design/v0.2/02-content-catalog.md`）：`setFollowPlayer`
+ * 开启后魂灵每逻辑步朝玩家直线移动，速度与停止距离由调用方给出；
+ * 上限 +1 由场景通过 `setMaxSummons` 与 W03 合并，不在本模块重复判断。
+ *
  * 残影标记通过 `SoulMarkSink` 写入共享标记集合（场景传入 `GrenadeSystem`），
  * 避免魂灵与榴弹各维护一套标记。时间按固定逻辑步长的秒数累计。
  */
@@ -44,6 +48,8 @@ export interface SoulTarget {
   readonly x: number;
   readonly y: number;
   readonly isAlive: boolean;
+  /** 目标类别；宝箱不参与残影标记与减速。 */
+  readonly kind?: 'enemy' | 'chest';
 }
 
 /** 共享残影标记的写入/查询接口；`GrenadeSystem` 已实现同签名方法。 */
@@ -90,8 +96,9 @@ export interface SoulStepResult {
 
 interface ActiveSoul {
   readonly id: number;
-  readonly x: number;
-  readonly y: number;
+  /** H28 跟随时每步更新，因此坐标可变。 */
+  x: number;
+  y: number;
   readonly expiresAt: number;
   nextTickAt: number;
 }
@@ -105,12 +112,17 @@ export class SoulSystem {
   private readonly marks: SoulMarkSink;
   private cooldownSeconds = 0;
   private cooldownMultiplier = 1;
+  private durationMultiplier = 1;
   private elapsed = 0;
   private nextSoulId = 1;
   private souls: ActiveSoul[] = [];
   private readonly slowUntil = new Map<string, number>();
   /** W03 的上限覆盖；null 表示使用角色配置。 */
   private maxSummonsOverride: number | null = null;
+  /** H28 魂灵游行：缓慢跟随玩家。 */
+  private followEnabled = false;
+  private followSpeed = 0;
+  private followDistance = 0;
 
   constructor(config: SoulConfig, marks: SoulMarkSink) {
     if (!(config.cooldownSeconds > 0) || !Number.isFinite(config.cooldownSeconds)) {
@@ -149,6 +161,12 @@ export class SoulSystem {
       Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   }
 
+  /** I15：技能持续时间倍率；只影响之后召唤的魂灵。 */
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
   /** G08 返还剩余冷却；`minimumSeconds` 为 40% 冷却缩减上限对应的下限。 */
   reduceCooldown(seconds: number, minimumSeconds = 0): void {
     if (!(seconds > 0) || !Number.isFinite(seconds)) return;
@@ -157,6 +175,11 @@ export class SoulSystem {
     // 剩余冷却已到 40% 缩减下限或更低时不再返还，也不允许反向抬高。
     if (this.cooldownSeconds <= minimum + TIME_EPSILON) return;
     this.cooldownSeconds = Math.max(minimum, this.cooldownSeconds - seconds);
+  }
+
+  /** 进入下一波：清空上一波剩余冷却，K 立即就绪。 */
+  resetForWaveStart(): void {
+    this.cooldownSeconds = 0;
   }
 
   get soulCount(): number {
@@ -183,6 +206,23 @@ export class SoulSystem {
 
   get snapshots(): readonly SoulSnapshot[] {
     return this.souls.map((soul) => this.snapshot(soul));
+  }
+
+  /**
+   * H28 魂灵游行：开启后魂灵每秒朝玩家当前位置移动 `speed` 像素，
+   * 距离小于 `stopDistance` 时停下。直线跟随、不寻路；魂灵本就无敌且不挡路。
+   */
+  setFollowPlayer(enabled: boolean, speed = 60, stopDistance = 40): void {
+    this.followEnabled = enabled;
+    this.followSpeed =
+      Number.isFinite(speed) && speed > 0 ? speed : 60;
+    this.followDistance =
+      Number.isFinite(stopDistance) && stopDistance >= 0 ? stopDistance : 40;
+  }
+
+  /** 是否开启 H28 跟随。 */
+  get isFollowingPlayer(): boolean {
+    return this.followEnabled;
   }
 
   /** 波中快照：冷却、魂灵寿命/下一 tick、上限覆盖与减速剩余。 */
@@ -251,7 +291,7 @@ export class SoulSystem {
       id: this.nextSoulId,
       x: point.x,
       y: point.y,
-      expiresAt: this.elapsed + this.config.durationSeconds,
+      expiresAt: this.elapsed + this.config.durationSeconds * this.durationMultiplier,
       nextTickAt: this.elapsed + this.config.tickSeconds,
     };
     this.nextSoulId += 1;
@@ -261,10 +301,14 @@ export class SoulSystem {
   }
 
   /**
-   * 推进逻辑时间：先结算本步到期的标记 tick，再移除到期魂灵。
-   * 寿命终点（12 秒）恰好也是 tick 点时，先标记再消失。
+   * 推进逻辑时间：先按 H28 让魂灵跟随，再结算本步到期的标记 tick，
+   * 最后移除到期魂灵。寿命终点（12 秒）恰好也是 tick 点时，先标记再消失。
    */
-  step(stepSeconds: number, targets: readonly SoulTarget[]): SoulStepResult {
+  step(
+    stepSeconds: number,
+    targets: readonly SoulTarget[],
+    playerPosition: Point | null = null,
+  ): SoulStepResult {
     if (!(stepSeconds > 0) || !Number.isFinite(stepSeconds)) {
       return { ticks: [], expiredSoulIds: [] };
     }
@@ -274,6 +318,7 @@ export class SoulSystem {
       this.cooldownSeconds -= stepSeconds;
       if (this.cooldownSeconds <= TIME_EPSILON) this.cooldownSeconds = 0;
     }
+    this.stepFollow(stepSeconds, playerPosition);
 
     const ticks: SoulTickResult[] = [];
     for (const soul of this.souls) {
@@ -316,6 +361,24 @@ export class SoulSystem {
     return this.isSlowed(targetId) ? 1 - this.config.slowPercent : 1;
   }
 
+  /** H28：每步朝玩家移动，直到进入停止距离；不穿墙判定，保持纯直线跟随。 */
+  private stepFollow(stepSeconds: number, playerPosition: Point | null): void {
+    if (!this.followEnabled || !playerPosition) return;
+    if (!(this.followSpeed > 0) || !(stepSeconds > 0)) return;
+    for (const soul of this.souls) {
+      const dx = playerPosition.x - soul.x;
+      const dy = playerPosition.y - soul.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= this.followDistance + TIME_EPSILON) continue;
+      const travel = Math.min(
+        this.followSpeed * stepSeconds,
+        distance - this.followDistance,
+      );
+      soul.x += (dx / distance) * travel;
+      soul.y += (dy / distance) * travel;
+    }
+  }
+
   private snapshot(soul: ActiveSoul): SoulSnapshot {
     return {
       id: soul.id,
@@ -331,6 +394,7 @@ export class SoulSystem {
 
     for (const target of targets) {
       if (!target.isAlive) continue;
+      if (target.kind === 'chest') continue;
       const dx = target.x - soul.x;
       const dy = target.y - soul.y;
       if (dx * dx + dy * dy > maxDistanceSquared) continue;

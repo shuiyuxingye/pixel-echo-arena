@@ -16,6 +16,9 @@ import {
   type Rarity,
   type UpgradeDefinition,
 } from './data';
+import { SeededRandom, type RandomSource } from './random';
+
+export { SeededRandom } from './random';
 
 /** 每种稀有度在普通抽取中的权重；无有效卡的稀有度会先移除再归一化。 */
 export const RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = {
@@ -39,41 +42,6 @@ export const RARITY_LABELS: Readonly<Record<Rarity, string>> = {
   gold: '金',
   prismatic: '棱彩',
 };
-
-/** 确定性伪随机数发生器（mulberry32）：同种子产生同序列。 */
-export class SeededRandom {
-  private state: number;
-
-  constructor(seed: number) {
-    if (!Number.isFinite(seed)) {
-      throw new Error(`Seed must be finite, received ${seed}`);
-    }
-    this.state = Math.floor(seed) >>> 0;
-  }
-
-  /** 返回 [0, 1) 的浮点数。 */
-  next(): number {
-    this.state = (this.state + 0x6d2b79f5) >>> 0;
-    let value = this.state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  }
-
-  /** 当前内部状态；续局快照保存它即可精确恢复后续随机序列。 */
-  get snapshotState(): number {
-    return this.state;
-  }
-
-  /** 恢复内部状态；非法值返回 false 并保持原状态。 */
-  restoreState(value: number): boolean {
-    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
-      return false;
-    }
-    this.state = value >>> 0;
-    return true;
-  }
-}
 
 /** 抽取时使用的已获得强化状态。 */
 export interface UpgradePoolState {
@@ -365,6 +333,11 @@ export interface UpgradeRunConfig {
   readonly pool?: readonly UpgradeDefinition[];
   /** 本局种子；同种子与同操作序列产生同结果。 */
   readonly seed: number;
+  /**
+   * 本局奖励随机流；商店/海克斯/波末奖励共用这一条。
+   * 不传时按 `seed` 自建一条（纯模块测试与旧调用方兼容）。
+   */
+  readonly random?: RandomSource;
   /** 本局重抽次数，默认 2。 */
   readonly rerolls?: number;
 }
@@ -391,7 +364,7 @@ export class UpgradeRun {
   readonly pool: readonly UpgradeDefinition[];
   readonly seed: number;
 
-  private readonly random: SeededRandom;
+  private readonly random: RandomSource;
   private readonly stacksValue = new Map<string, number>();
   private rerollsRemainingValue: number;
 
@@ -399,7 +372,8 @@ export class UpgradeRun {
     this.characterId = config.characterId;
     this.pool = config.pool ?? UPGRADE_LIST;
     this.seed = config.seed;
-    this.random = new SeededRandom(config.seed);
+    // 场景注入共享的 reward 流；纯模块调用方仍可只给 seed。
+    this.random = config.random ?? new SeededRandom(config.seed);
     this.rerollsRemainingValue = Math.max(
       0,
       Math.floor(config.rerolls ?? DEFAULT_REROLLS_PER_RUN),

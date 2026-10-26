@@ -130,7 +130,7 @@ describe('设置页：重绑、冲突、取消、恢复默认与开关', () => {
     panel.show();
 
     const rows = document.querySelectorAll('.settings-row');
-    expect(rows).toHaveLength(14);
+    expect(rows).toHaveLength(16);
     expect(activeRowId()).toBe('binding:moveUp');
     expect(rows[0]?.textContent).toContain('向上移动');
     expect(rows[0]?.textContent).toContain('W');
@@ -153,11 +153,11 @@ describe('设置页：重绑、冲突、取消、恢复默认与开关', () => {
     expect(activeRowId()).toBe('binding:attack');
     press('Enter');
     expect(settingsMessage()).toContain('按任意键绑定');
-    press('KeyU');
+    press('KeyQ');
 
-    expect(store.get().keyBindings.attack).toBe('KeyU');
-    expect(loadUserSettings(localStorage).keyBindings.attack).toBe('KeyU');
-    expect(settingsMessage()).toContain('已把「普通攻击」绑定到 U');
+    expect(store.get().keyBindings.attack).toBe('KeyQ');
+    expect(loadUserSettings(localStorage).keyBindings.attack).toBe('KeyQ');
+    expect(settingsMessage()).toContain('已把「普通攻击」绑定到 Q');
     panel.destroy();
   });
 
@@ -190,7 +190,7 @@ describe('设置页：重绑、冲突、取消、恢复默认与开关', () => {
     const panel = mountSettingsPanel({ doc: document, store, onBack });
     panel.show();
 
-    pressDown(7);
+    pressDown(9);
     expect(activeRowId()).toBe('binding:dodge');
     press('Enter');
     press('Escape');
@@ -211,7 +211,7 @@ describe('设置页：重绑、冲突、取消、恢复默认与开关', () => {
     const panel = mountSettingsPanel({ doc: document, store, onBack: vi.fn() });
     panel.show();
 
-    pressDown(9);
+    pressDown(11);
     expect(activeRowId()).toBe('toggle:muted');
     press('Enter');
     expect(store.get().muted).toBe(true);
@@ -235,12 +235,12 @@ describe('设置页：重绑、冲突、取消、恢复默认与开关', () => {
     mountDom();
     const store = createSettingsStore({ storage: localStorage });
     store.update({ muted: true });
-    store.rebind('attack', 'KeyU');
+    store.rebind('attack', 'KeyQ');
     const onBack = vi.fn();
     const panel = mountSettingsPanel({ doc: document, store, onBack });
     panel.show();
 
-    pressDown(12);
+    pressDown(14);
     expect(activeRowId()).toBe('reset');
     press('Enter');
     expect(store.get().keyBindings).toEqual(DEFAULT_KEY_BINDINGS);
@@ -270,7 +270,7 @@ describe('帮助页', () => {
     help.show();
 
     const text = document.querySelector<HTMLElement>('#help-content')?.textContent ?? '';
-    expect(text).toContain('9 波');
+    expect(text).toContain('18 波');
     expect(text).toContain('U：按住沿当前面向');
     expect(text).toContain('Esc 取消编辑');
     expect(document.activeElement).toBe(document.querySelector('#help-back-button'));

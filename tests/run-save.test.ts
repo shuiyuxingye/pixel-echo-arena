@@ -120,10 +120,59 @@ describe('续局快照读写', () => {
     });
   });
 
-  it('覆盖五种保存时机：波初、波间、生成选项、重抽与选卡完成', () => {
+  it('海克斯手牌与拥有列表可落盘并读回；重复/其他职业/未知 ID 拒绝', () => {
+    const storage = memoryStorage();
+    const draft = validDraft({
+      kind: 'upgrade-options',
+      characterId: 'amiya',
+      hand: ['H01', 'H07', 'H31'],
+      handKind: 'hex',
+      focusIndex: 2,
+      pendingLevelUps: 1,
+      hexes: ['H03', 'H31'],
+    });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.checkpoint.handKind).toBe('hex');
+    expect(loaded.checkpoint.hand).toEqual(['H01', 'H07', 'H31']);
+    expect(loaded.checkpoint.hexes).toEqual(['H03', 'H31']);
+
+    expect(
+      saveRunCheckpoint(
+        validDraft({ characterId: 'amiya', hexes: ['H03', 'H03'] }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+    expect(
+      saveRunCheckpoint(
+        validDraft({ characterId: 'amiya', hexes: ['H25'] }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+    expect(
+      saveRunCheckpoint(
+        validDraft({
+          characterId: 'amiya',
+          hand: ['H01', 'H25'],
+          handKind: 'hex',
+          focusIndex: 0,
+        }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+  });
+
+  it('覆盖七种保存时机：波初、波末、波间、生成选项、重抽、选卡与奖励领取', () => {
     const storage = memoryStorage();
     const drafts: RunCheckpointDraft[] = [
       validDraft({ kind: 'wave-start' }),
+      validDraft({ kind: 'wave-end', rewardStage: 'briefing' }),
       validDraft({ kind: 'intermission', rewardStage: 'intermission' }),
       validDraft({
         kind: 'upgrade-options',
@@ -139,6 +188,13 @@ describe('续局快照读写', () => {
         rerollsRemaining: 0,
       }),
       validDraft({ kind: 'card-selected', hand: null }),
+      validDraft({
+        kind: 'reward-claimed',
+        rewardStage: 'chest',
+        rewardQueue: [
+          { id: 'chest:w3-1', kind: 'chest', status: 'pending', sourceId: 'w3-1' },
+        ],
+      }),
     ];
 
     for (const draft of drafts) {
@@ -150,6 +206,76 @@ describe('续局快照读写', () => {
         expect(loaded.checkpoint.hand).toEqual(draft.hand);
       }
     }
+  });
+
+  it('波末简报与奖励队列可往返，非法队列写入失败', () => {
+    const storage = memoryStorage();
+    const rewardQueue = [
+      { id: 'chest:w3-1', kind: 'chest', status: 'claimed', sourceId: 'w3-1' },
+      { id: 'core:core-6', kind: 'core', status: 'pending', sourceId: 'core-6' },
+      { id: 'upgrade:3:1', kind: 'upgrade', status: 'pending' },
+    ] as const;
+    const draft = validDraft({
+      kind: 'wave-end',
+      rewardStage: 'briefing',
+      rewardQueue: [...rewardQueue],
+      waveKills: 7,
+    });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.rewardStage).toBe('briefing');
+      expect(loaded.checkpoint.waveKills).toBe(7);
+      expect(loaded.checkpoint.rewardQueue).toEqual(rewardQueue);
+    }
+
+    expect(
+      saveRunCheckpoint(
+        validDraft({
+          rewardQueue: [
+            { id: 'same', kind: 'chest', status: 'pending' },
+            { id: 'same', kind: 'core', status: 'pending' },
+          ],
+        }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+    expect(
+      saveRunCheckpoint(
+        validDraft({
+          rewardQueue: [
+            {
+              id: 'bad-kind',
+              kind: 'nope' as unknown as 'chest',
+              status: 'pending',
+            },
+          ],
+        }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+    expect(
+      saveRunCheckpoint(
+        validDraft({
+          rewardQueue: [
+            {
+              id: 'bad-status',
+              kind: 'chest',
+              status: 'nope' as unknown as 'pending',
+            },
+          ],
+        }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(false);
+    expect(saveRunCheckpoint(validDraft({ waveKills: -1 }), storage, SAVED_AT)).toBe(
+      false,
+    );
   });
 
   it('没有存档或存储不可用时返回 none', () => {
@@ -284,6 +410,36 @@ describe('续局快照读写', () => {
     });
   });
 
+  it('快照往返保留金币；旧存档缺省时保持 undefined 由场景回退初始 40', () => {
+    const storage = memoryStorage();
+    expect(saveRunCheckpoint(validDraft({ gold: 137 }), storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.checkpoint.gold).toBe(137);
+
+    const legacy: Record<string, unknown> = {
+      ...validDraft(),
+      schemaVersion: RUN_SAVE_SCHEMA_VERSION,
+      savedAt: SAVED_AT.toISOString(),
+    };
+    delete legacy.gold;
+    storage.setItem(RUN_SAVE_STORAGE_KEY, JSON.stringify(legacy));
+    const legacyLoaded = loadRunCheckpoint(storage);
+    expect(legacyLoaded.status).toBe('ok');
+    if (legacyLoaded.status !== 'ok') return;
+    expect(legacyLoaded.checkpoint.gold).toBeUndefined();
+  });
+
+  it('拒绝非法金币：负数、非整数与无穷值', () => {
+    const storage = memoryStorage();
+    expect(saveRunCheckpoint(validDraft({ gold: -1 }), storage, SAVED_AT)).toBe(false);
+    expect(saveRunCheckpoint(validDraft({ gold: 1.5 }), storage, SAVED_AT)).toBe(false);
+    expect(
+      saveRunCheckpoint(validDraft({ gold: Number.POSITIVE_INFINITY }), storage, SAVED_AT),
+    ).toBe(false);
+  });
+
   it('拒绝非法击杀/伤害：负数、非整数与无穷值', () => {
     const storage = memoryStorage();
     expect(saveRunCheckpoint(validDraft({ kills: -1 }), storage, SAVED_AT)).toBe(false);
@@ -369,17 +525,29 @@ describe('快照恢复语义', () => {
     expect(progression.maxHealthBonus).toBe(15);
 
     progression.restore({
-      level: 9,
+      level: 15,
       experience: 50,
       totalExperience: 50,
       pendingLevelUps: 1,
     });
-    expect(progression.level).toBe(9);
+    expect(progression.level).toBe(15);
     expect(progression.experience).toBe(0);
   });
 
-  it('奖励流转恢复到升级/机制/波间，不重放吸取', () => {
+  it('奖励流转恢复到简报/宝箱/核心/升级/机制/波间，不重放吸取', () => {
     const flow = new WaveRewardFlow(3);
+    expect(flow.restore('briefing', 0, [])).toBe('briefing');
+    expect(
+      flow.restore('chest', 0, [
+        { id: 'chest:w3-1', kind: 'chest', status: 'pending', sourceId: 'w3-1' },
+      ]),
+    ).toBe('chest');
+    expect(
+      flow.restore('core', 0, [
+        { id: 'core:core-6', kind: 'core', status: 'pending', sourceId: 'core-6' },
+      ]),
+    ).toBe('core');
+
     expect(flow.restore('upgrade', 2)).toBe('upgrade');
     expect(flow.pendingLevelUps).toBe(2);
 
@@ -387,6 +555,27 @@ describe('快照恢复语义', () => {
     expect(flow.restore('intermission', 0)).toBe('intermission');
     // 瞬时阶段不参与恢复。
     expect(flow.restore('absorb', 1)).toBe('intermission');
+  });
+
+  it('奖励队列恢复保留已领取状态，不重领', () => {
+    const flow = new WaveRewardFlow(7);
+    expect(
+      flow.restore('upgrade', 1, [
+        {
+          id: 'upgrade:7:1',
+          kind: 'upgrade',
+          status: 'claimed',
+        },
+        {
+          id: 'upgrade:7:2',
+          kind: 'upgrade',
+          status: 'pending',
+        },
+      ]),
+    ).toBe('upgrade');
+    expect(flow.remainingRewards).toBe(1);
+    expect(flow.currentReward?.id).toBe('upgrade:7:2');
+    expect(flow.completeUpgrade()).toBe('intermission');
   });
 
   it('强化层数、重抽次数与随机状态可还原；恢复手牌不消耗随机序列', () => {
@@ -566,17 +755,19 @@ describe('菜单与场景接入', () => {
     menu.hide();
   });
 
-  it('场景在五个检查点写快照、恢复时暂停并在结算清除', () => {
+  it('场景在七个检查点写快照、恢复时暂停并在结算清除', () => {
     const scene = readFileSync(
       resolve(ROOT, 'src/game/scenes/ArenaScene.ts'),
       'utf8',
     );
     for (const kind of [
       'wave-start',
+      'wave-end',
       'intermission',
       'upgrade-options',
       'reroll',
       'card-selected',
+      'reward-claimed',
     ]) {
       expect(scene).toContain(`saveCheckpoint('${kind}')`);
     }
@@ -618,5 +809,409 @@ describe('菜单与场景接入', () => {
     expect(
       scene.match(/damageDealt: this\.damageDealt/g)?.length,
     ).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('宝箱候选与永久道具层数存档', () => {
+  it('候选、兜底金币与道具层数可往返', () => {
+    const storage = memoryStorage();
+    const draft = validDraft({
+      kind: 'reward-claimed',
+      rewardStage: 'chest',
+      rewardQueue: [
+        {
+          id: 'chest:w2-1',
+          kind: 'chest',
+          status: 'claimed',
+          sourceId: 'w2-1',
+          offers: ['I01', 'I02'],
+          fallbackGold: 0,
+        },
+      ],
+      items: [
+        { id: 'I01', stacks: 2 },
+        { id: 'I14', stacks: 1 },
+      ],
+    });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.rewardQueue?.[0]?.offers).toEqual(['I01', 'I02']);
+      expect(loaded.checkpoint.items).toEqual([
+        { id: 'I01', stacks: 2 },
+        { id: 'I14', stacks: 1 },
+      ]);
+    }
+  });
+
+  it('拒绝越界道具层数、未知道具与重复候选', () => {
+    const storage = memoryStorage();
+    const invalidDrafts: RunCheckpointDraft[] = [
+      validDraft({ items: [{ id: 'I01', stacks: 4 }] }),
+      validDraft({ items: [{ id: 'I99', stacks: 1 }] }),
+      validDraft({ items: [{ id: 'I01', stacks: 0 }] }),
+      validDraft({
+        items: [
+          { id: 'I01', stacks: 1 },
+          { id: 'I01', stacks: 2 },
+        ],
+      }),
+      validDraft({
+        rewardQueue: [
+          {
+            id: 'chest:x',
+            kind: 'chest',
+            status: 'pending',
+            offers: ['I01', 'I01'],
+          },
+        ],
+      }),
+      validDraft({
+        rewardQueue: [
+          {
+            id: 'chest:x',
+            kind: 'chest',
+            status: 'pending',
+            fallbackGold: -1,
+          },
+        ],
+      }),
+    ];
+
+    for (const draft of invalidDrafts) {
+      expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(false);
+    }
+  });
+});
+
+describe('触发闸门存档', () => {
+  it('剩余冷却、每波与每局计数可往返，且不被调用方改数组污染', () => {
+    const storage = memoryStorage();
+    const triggerGates = {
+      rules: [
+        {
+          id: 'E01',
+          cooldownRemainingSeconds: 1.25,
+          waveCount: 2,
+          runCount: 5,
+        },
+        {
+          id: 'H07',
+          cooldownRemainingSeconds: 0,
+          waveCount: 0,
+          runCount: 9,
+        },
+      ],
+    };
+    const draft = validDraft({ triggerGates });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    triggerGates.rules[0]!.waveCount = 99;
+
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.triggerGates).toEqual({
+        rules: [
+          {
+            id: 'E01',
+            cooldownRemainingSeconds: 1.25,
+            waveCount: 2,
+            runCount: 5,
+          },
+          {
+            id: 'H07',
+            cooldownRemainingSeconds: 0,
+            waveCount: 0,
+            runCount: 9,
+          },
+        ],
+      });
+    }
+  });
+
+  it('拒绝非法闸门快照：负数冷却、重复 ID、非整数计数与缺失字段', () => {
+    const storage = memoryStorage();
+    const invalidDrafts: RunCheckpointDraft[] = [
+      validDraft({
+        triggerGates: {
+          rules: [
+            {
+              id: 'E01',
+              cooldownRemainingSeconds: -1,
+              waveCount: 0,
+              runCount: 0,
+            },
+          ],
+        },
+      }),
+      validDraft({
+        triggerGates: {
+          rules: [
+            { id: 'E01', cooldownRemainingSeconds: 0, waveCount: 0, runCount: 0 },
+            { id: 'E01', cooldownRemainingSeconds: 0, waveCount: 0, runCount: 0 },
+          ],
+        },
+      }),
+      validDraft({
+        triggerGates: {
+          rules: [
+            {
+              id: 'E01',
+              cooldownRemainingSeconds: 0,
+              waveCount: 1.5,
+              runCount: 0,
+            },
+          ],
+        },
+      }),
+      validDraft({
+        triggerGates: {
+          rules: [{ id: 'E01', cooldownRemainingSeconds: 0 }] as never,
+        },
+      }),
+    ];
+
+    for (const draft of invalidDrafts) {
+      expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(false);
+    }
+  });
+});
+
+describe('核心效果存档', () => {
+  it('E01–E03 的蓄力、冷却与次数可往返，且不被调用方改数组污染', () => {
+    const storage = memoryStorage();
+    const coreEffects = {
+      e01DistinctTargets: ['enemy-1', 'enemy-2'],
+      e01Armed: true,
+      e01CooldownRemaining: 1.5,
+      e02Hits: 5,
+      e02Triggers: 2,
+      e03UsedThisWave: true,
+      e03UsedThisRun: 2,
+    };
+    const draft = validDraft({ coreEffects });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    coreEffects.e01DistinctTargets.push('enemy-3');
+
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.coreEffects).toEqual({
+        e01DistinctTargets: ['enemy-1', 'enemy-2'],
+        e01Armed: true,
+        e01CooldownRemaining: 1.5,
+        e02Hits: 5,
+        e02Triggers: 2,
+        e03UsedThisWave: true,
+        e03UsedThisRun: 2,
+      });
+    }
+  });
+
+  it('E05–E08 的新字段可往返，旧存档缺字段仍然合法', () => {
+    const storage = memoryStorage();
+    const coreEffects = {
+      e01DistinctTargets: [],
+      e01Armed: false,
+      e01CooldownRemaining: 0,
+      e02Hits: 0,
+      e02Triggers: 0,
+      e03UsedThisWave: false,
+      e03UsedThisRun: 0,
+      e05KillGoldThisWave: 45,
+      e05DamageBonus: 0.06,
+      e06Casts: 2,
+      e06Echoes: 1,
+      e06EchoRemainingSeconds: 0.5,
+      e06EchoPending: true,
+      e06EchoSlot: 'I',
+      e07Active: true,
+      e08Hits: 4,
+      e08Triggers: 2,
+    };
+    const draft = validDraft({ coreEffects });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.coreEffects).toEqual(coreEffects);
+    }
+
+    // 旧存档只有 E01–E04 字段，不因新字段缺省被判损坏。
+    const legacy = validDraft({
+      coreEffects: {
+        e01DistinctTargets: [],
+        e01Armed: false,
+        e01CooldownRemaining: 0,
+        e02Hits: 0,
+        e02Triggers: 0,
+        e03UsedThisWave: false,
+        e03UsedThisRun: 0,
+      },
+    });
+    expect(saveRunCheckpoint(legacy, storage, SAVED_AT)).toBe(true);
+  });
+
+  it('拒绝非法核心效果快照：E02 计数越界、负数冷却与每局次数超限', () => {
+    const storage = memoryStorage();
+    const base = {
+      e01DistinctTargets: [],
+      e01Armed: false,
+      e01CooldownRemaining: 0,
+      e02Hits: 0,
+      e02Triggers: 0,
+      e03UsedThisWave: false,
+      e03UsedThisRun: 0,
+    };
+    const invalidDrafts: RunCheckpointDraft[] = [
+      validDraft({ coreEffects: { ...base, e02Hits: 8 } }),
+      validDraft({ coreEffects: { ...base, e01CooldownRemaining: -1 } }),
+      validDraft({ coreEffects: { ...base, e03UsedThisRun: 4 } }),
+      validDraft({ coreEffects: { ...base, e01Armed: 1 } as never }),
+      validDraft({ coreEffects: { ...base, e05DamageBonus: 0.31 } }),
+      validDraft({ coreEffects: { ...base, e06Casts: 3 } }),
+      validDraft({ coreEffects: { ...base, e06EchoRemainingSeconds: 2 } }),
+      validDraft({ coreEffects: { ...base, e08Hits: 6 } }),
+      validDraft({ coreEffects: { ...base, e08Triggers: -1 } }),
+    ];
+
+    for (const draft of invalidDrafts) {
+      expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(false);
+    }
+  });
+});
+
+describe('精英核心候选与已拥有核心存档', () => {
+  it('核心候选、已拥有核心可往返，恢复后不重抽', () => {
+    const storage = memoryStorage();
+    const draft = validDraft({
+      kind: 'reward-claimed',
+      rewardStage: 'core',
+      rewardQueue: [
+        {
+          id: 'core:core-6',
+          kind: 'core',
+          status: 'pending',
+          sourceId: 'core-6',
+          coreOffers: ['E03', 'E05', 'E08'],
+        },
+      ],
+      coreIds: ['E01', 'E02'],
+    });
+
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.rewardQueue?.[0]?.coreOffers).toEqual([
+        'E03',
+        'E05',
+        'E08',
+      ]);
+      expect(loaded.checkpoint.coreIds).toEqual(['E01', 'E02']);
+    }
+  });
+
+  it('拒绝未知/重复核心、重复候选与挂错奖励种类的核心候选', () => {
+    const storage = memoryStorage();
+    const invalidDrafts: RunCheckpointDraft[] = [
+      validDraft({ coreIds: ['E99'] }),
+      validDraft({ coreIds: ['core-6'] }),
+      validDraft({ coreIds: ['E01', 'E01'] }),
+      validDraft({
+        rewardQueue: [
+          {
+            id: 'core:x',
+            kind: 'core',
+            status: 'pending',
+            coreOffers: ['E01', 'E01'],
+          },
+        ],
+      }),
+      validDraft({
+        rewardQueue: [
+          {
+            id: 'core:x',
+            kind: 'core',
+            status: 'pending',
+            coreOffers: ['E01', 'E02', 'E03', 'E04'],
+          },
+        ],
+      }),
+      validDraft({
+        rewardQueue: [
+          {
+            id: 'chest:x',
+            kind: 'chest',
+            status: 'pending',
+            coreOffers: ['E01'],
+          },
+        ],
+      }),
+    ];
+
+    for (const draft of invalidDrafts) {
+      expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(false);
+    }
+  });
+});
+
+describe('配方追踪存档', () => {
+  it('追踪配方与保底计数可往返，旧存档缺字段仍然合法', () => {
+    const storage = memoryStorage();
+    const draft = validDraft({
+      recipeTracking: { recipeId: 'R01', shopsSinceSupply: 2 },
+    });
+    expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(true);
+    const loaded = loadRunCheckpoint(storage);
+    expect(loaded.status).toBe('ok');
+    if (loaded.status === 'ok') {
+      expect(loaded.checkpoint.recipeTracking).toEqual({
+        recipeId: 'R01',
+        shopsSinceSupply: 2,
+      });
+    }
+
+    const legacy = memoryStorage();
+    expect(saveRunCheckpoint(validDraft(), legacy, SAVED_AT)).toBe(true);
+    const legacyLoaded = loadRunCheckpoint(legacy);
+    expect(legacyLoaded.status).toBe('ok');
+    if (legacyLoaded.status === 'ok') {
+      expect(legacyLoaded.checkpoint.recipeTracking).toBeUndefined();
+    }
+  });
+
+  it('未追踪 null 合法，非法编号与越界计数被拒绝', () => {
+    const storage = memoryStorage();
+    expect(
+      saveRunCheckpoint(
+        validDraft({ recipeTracking: { recipeId: null, shopsSinceSupply: 0 } }),
+        storage,
+        SAVED_AT,
+      ),
+    ).toBe(true);
+
+    const invalidDrafts: RunCheckpointDraft[] = [
+      validDraft({
+        recipeTracking: { recipeId: 'R99', shopsSinceSupply: 0 },
+      }),
+      validDraft({
+        recipeTracking: { recipeId: 'I01', shopsSinceSupply: 0 },
+      }),
+      validDraft({
+        recipeTracking: { recipeId: 'R01', shopsSinceSupply: 3 },
+      }),
+      validDraft({
+        recipeTracking: { recipeId: 'R01', shopsSinceSupply: -1 },
+      }),
+    ];
+    for (const draft of invalidDrafts) {
+      expect(saveRunCheckpoint(draft, storage, SAVED_AT)).toBe(false);
+    }
   });
 });

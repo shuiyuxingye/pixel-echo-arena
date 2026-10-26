@@ -116,6 +116,8 @@ export class AmiyaCombat {
   private readonly burstDamageType: DamageType;
   private cooldownSeconds = 0;
   private cooldownMultiplier = 1;
+  /** I15：技能持续时间倍率（奇美拉）；爆发窗口的固定 0.8 秒不随之改变。 */
+  private durationMultiplier = 1;
   private burstElapsed = 0;
   private burstActive = false;
   private burstShotsFired = 0;
@@ -126,7 +128,12 @@ export class AmiyaCombat {
   private totalJHits = 0;
   private emotionalAbsorptionHitsPerTrigger = EMOTIONAL_ABSORPTION_HITS;
   private chimeraDurationOverride: number | null = null;
+  private weaknessSecondsOverride: number | null = null;
   private weaknessSlowRemoved = false;
+  /** H36：奇美拉结束后额外禁 J 的秒数；0 表示没有该效果。 */
+  private aftermathJLockSeconds = 0;
+  /** H36：当前奇美拉结束后的禁 J 剩余秒数。 */
+  private jLockSeconds = 0;
   private doubleCast: {
     readonly delaySeconds: number;
     readonly shots: number;
@@ -201,6 +208,11 @@ export class AmiyaCombat {
     return Math.max(0, this.weaknessRemainingSeconds);
   }
 
+  /** 本次奇美拉结束后的虚弱时长（基础值或 H34 覆盖值）。 */
+  get weaknessSeconds(): number {
+    return this.weaknessSecondsOverride ?? this.config.weaknessSeconds;
+  }
+
   /** 虚弱期间的移速倍率（0.75 = −25%）；A04 移除减速后恒为 1。 */
   get moveSpeedMultiplier(): number {
     return this.isWeaknessActive && !this.weaknessSlowRemoved
@@ -210,7 +222,10 @@ export class AmiyaCombat {
 
   /** A04 生效后奇美拉的实际持续时间（秒）。 */
   get chimeraDurationSeconds(): number {
-    return this.chimeraDurationOverride ?? this.config.chimeraDurationSeconds;
+    return (
+      (this.chimeraDurationOverride ?? this.config.chimeraDurationSeconds) *
+      this.durationMultiplier
+    );
   }
 
   get isBurstActive(): boolean {
@@ -219,11 +234,21 @@ export class AmiyaCombat {
 
   /** 爆发结束后的 0.5 秒疲劳：只锁 J，不锁移动与闪避。 */
   get isJFiringLocked(): boolean {
-    return this.fatigueSeconds > TIME_EPSILON;
+    return this.fatigueSeconds > TIME_EPSILON || this.jLockSeconds > TIME_EPSILON;
   }
 
   get fatigueRemaining(): number {
     return Math.max(0, this.fatigueSeconds);
+  }
+
+  /** H36：奇美拉结束后的禁 J 剩余秒数；与疲劳分开显示。 */
+  get chimeraJLockRemaining(): number {
+    return Math.max(0, this.jLockSeconds);
+  }
+
+  /** J 锁定剩余：疲劳与 H36 禁 J 取较晚到期者，供 HUD 显示。 */
+  get jFiringLockRemaining(): number {
+    return Math.max(this.fatigueRemaining, this.chimeraJLockRemaining);
   }
 
   get shotsFiredInBurst(): number {
@@ -245,6 +270,8 @@ export class AmiyaCombat {
       chimeraCooldownSeconds: this.chimeraCooldownSeconds,
       chimeraRemainingSeconds: this.chimeraRemainingSeconds,
       weaknessRemainingSeconds: this.weaknessRemainingSeconds,
+      // H36 的禁 J 窗口随世界快照恢复；旧快照缺省为 0。
+      chimeraJLockRemainingSeconds: this.chimeraJLockRemaining,
       totalJHits: this.totalJHits,
       countedProjectileIds: [...this.countedProjectileIds],
       followupPending: this.followupPending,
@@ -264,6 +291,9 @@ export class AmiyaCombat {
     this.chimeraCooldownSeconds = nonNegative(state.chimeraCooldownSeconds);
     this.chimeraRemainingSeconds = nonNegative(state.chimeraRemainingSeconds);
     this.weaknessRemainingSeconds = nonNegative(state.weaknessRemainingSeconds);
+    this.jLockSeconds = nonNegative(
+      state.chimeraJLockRemainingSeconds ?? 0,
+    );
     this.totalJHits = Number.isInteger(state.totalJHits)
       ? Math.max(0, state.totalJHits)
       : 0;
@@ -310,6 +340,28 @@ export class AmiyaCombat {
   }
 
   /**
+   * H34：覆盖奇美拉结束后的虚弱时长（秒）；传 null 恢复基础值。
+   * 只影响之后结束的奇美拉，已在倒计时的虚弱保持不变。
+   */
+  setWeaknessSeconds(seconds: number | null): void {
+    if (seconds === null) {
+      this.weaknessSecondsOverride = null;
+      return;
+    }
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    this.weaknessSecondsOverride = seconds;
+  }
+
+  /**
+   * H36：奇美拉结束后额外禁 J 的秒数；0 关闭。
+   * 只影响之后结束的奇美拉，不追溯当前窗口。
+   */
+  setChimeraAftermathJLock(seconds: number): void {
+    this.aftermathJLockSeconds =
+      Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  }
+
+  /**
    * A03：开启 K 结束后的延迟追加连射；关闭时清掉尚未发射的追加弹。
    * 追加连射不重新进入 burst 状态，也不刷新疲劳。
    */
@@ -335,6 +387,12 @@ export class AmiyaCombat {
   /** 更新 G03 的冷却倍率；只影响之后启动的冷却，不追溯当前剩余时间。 */
   setCooldownMultiplier(multiplier: number): void {
     this.cooldownMultiplier =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
+  /** I15：技能持续时间倍率；只影响之后启动的奇美拉。 */
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier =
       Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   }
 
@@ -381,6 +439,16 @@ export class AmiyaCombat {
     return reduced;
   }
 
+  /**
+   * 进入下一波：清空 K/L 剩余冷却，并结束爆发、奇美拉、虚弱与疲劳，
+   * 保证两个技能在下一波开始即可施放。
+   */
+  resetForWaveStart(): void {
+    this.cooldownSeconds = 0;
+    this.chimeraCooldownSeconds = 0;
+    this.clearTemporaryEffects();
+  }
+
   /** 启动精神爆发；冷却中、爆发中或虚弱期返回 false。 */
   tryActivateK(): boolean {
     if (this.isWeaknessActive || this.burstActive || this.kCooldownRemaining > TIME_EPSILON) {
@@ -422,6 +490,7 @@ export class AmiyaCombat {
     this.burstElapsed = 0;
     this.burstShotsFired = 0;
     this.fatigueSeconds = 0;
+    this.jLockSeconds = 0;
     this.followupPending = false;
     this.followupRemainingSeconds = 0;
   }
@@ -449,6 +518,12 @@ export class AmiyaCombat {
       if (this.fatigueSeconds <= TIME_EPSILON) this.fatigueSeconds = 0;
     }
 
+    // H36 的禁 J 窗口与疲劳分开计时，结束时不覆盖疲劳的剩余时长。
+    if (this.jLockSeconds > 0) {
+      this.jLockSeconds -= stepSeconds;
+      if (this.jLockSeconds <= TIME_EPSILON) this.jLockSeconds = 0;
+    }
+
     // 先衰减已有虚弱，再推进奇美拉；奇美拉在这一步结束时才开始新的虚弱窗口。
     if (this.weaknessRemainingSeconds > 0) {
       this.weaknessRemainingSeconds -= stepSeconds;
@@ -459,7 +534,14 @@ export class AmiyaCombat {
       this.chimeraRemainingSeconds -= stepSeconds;
       if (this.chimeraRemainingSeconds <= TIME_EPSILON) {
         this.chimeraRemainingSeconds = 0;
-        this.weaknessRemainingSeconds = this.config.weaknessSeconds;
+        this.weaknessRemainingSeconds = this.weaknessSeconds;
+        // H36 失控奇美拉：结束后 2 秒不能 J；与虚弱同时开始、互不覆盖。
+        if (this.aftermathJLockSeconds > 0) {
+          this.jLockSeconds = Math.max(
+            this.jLockSeconds,
+            this.aftermathJLockSeconds,
+          );
+        }
       }
     }
 

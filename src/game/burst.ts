@@ -9,6 +9,10 @@
  *
  * W04 追加装药（`docs/game-design.md` §6.3）：弹药 6→9，最后一发溅射半径额外 +25%。
  *
+ * H27 三炮齐鸣（`docs/design/v0.2/02-content-catalog.md`）：每次启动后
+ * 每第 3 发强化弹由 `tripleShotTriggered` 通知场景追加两枚 25% 小弹；
+ * 小弹不经过 `consumeShot`，因此不消耗弹药也不推进计数。
+ *
  * 时间按固定逻辑步长的秒数累计；强化后的攻击定义由 `modifyAttack` 生成，
  * 场景把它交给弹体与榴弹系统，避免在多个模块里散落倍率计算。
  */
@@ -48,12 +52,20 @@ export class BurstSystem {
   private elapsed = 0;
   private cooldownSeconds = 0;
   private cooldownMultiplier = 1;
+  /** I15：技能持续时间倍率；作用于弹药失效时间。 */
+  private durationMultiplier = 1;
   private ammo = 0;
   private expiresAt = 0;
   /** W04 提供的额外弹药数。 */
   private bonusShots = 0;
   /** W04 最后一发的额外溅射半径比例；0 表示未拥有。 */
   private lastShotRadiusBonus = 0;
+  /** H27 三炮齐鸣：每第几发强化弹追加小弹；0 表示关闭。 */
+  private tripleShotEveryNth = 0;
+  /** 本次爆裂黎明启动后实际射出的强化弹数；H27 按此每第三发触发。 */
+  private shotsInVolley = 0;
+  /** 最近一次 `consumeShot` 是否真的射出了强化弹；失败时清零。 */
+  private lastShotConsumed = false;
 
   constructor(config: BurstConfig) {
     if (!(config.cooldownSeconds > 0) || !Number.isFinite(config.cooldownSeconds)) {
@@ -91,6 +103,12 @@ export class BurstSystem {
       Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   }
 
+  /** I15：技能持续时间倍率；只影响之后启动的弹药失效时间。 */
+  setDurationMultiplier(multiplier: number): void {
+    this.durationMultiplier =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  }
+
   /** G08 返还剩余冷却；`minimumSeconds` 为 40% 冷却缩减上限对应的下限。 */
   reduceCooldown(seconds: number, minimumSeconds = 0): void {
     if (!(seconds > 0) || !Number.isFinite(seconds)) return;
@@ -103,6 +121,17 @@ export class BurstSystem {
 
   get ammoRemaining(): number {
     return this.ammo;
+  }
+
+  /**
+   * 进入下一波：清空上一波剩余冷却与未用完的弹匣，
+   * 避免强化弹药或冷却跨波带入，L 立即就绪。
+   */
+  resetForWaveStart(): void {
+    this.cooldownSeconds = 0;
+    this.ammo = 0;
+    this.shotsInVolley = 0;
+    this.lastShotConsumed = false;
   }
 
   get maxAmmo(): number {
@@ -130,10 +159,38 @@ export class BurstSystem {
     return this.ammo === 1;
   }
 
+  /**
+   * H27 三炮齐鸣：设置「每第几发强化弹追加小弹」。
+   * `everyNth <= 1` 表示关闭；计数按每次爆裂黎明启动重置。
+   */
+  setTripleShot(enabled: boolean, everyNth = 3): void {
+    this.tripleShotEveryNth =
+      enabled && Number.isInteger(everyNth) && everyNth >= 1 ? everyNth : 0;
+  }
+
+  /** 本次爆裂黎明启动后已射出的强化弹数。 */
+  get volleyShotsFired(): number {
+    return this.shotsInVolley;
+  }
+
+  /**
+   * H27：刚射出的这一发是否触发追加小弹。
+   * 只统计真正扣弹的强化弹；派生小弹不会调用 `consumeShot`，因此不计数。
+   */
+  get tripleShotTriggered(): boolean {
+    if (
+      !this.lastShotConsumed ||
+      this.tripleShotEveryNth <= 0 ||
+      this.shotsInVolley <= 0
+    ) {
+      return false;
+    }
+    return this.shotsInVolley % this.tripleShotEveryNth === 0;
+  }
+
   get isActive(): boolean {
     return this.ammo > 0;
   }
-
   /** 剩余有效时间（秒）；无弹药时为 0。 */
   get ammoExpiresInSeconds(): number {
     return this.ammo > 0 ? Math.max(0, this.expiresAt - this.elapsed) : 0;
@@ -160,6 +217,7 @@ export class BurstSystem {
       ammoRemainingSeconds: this.ammoExpiresInSeconds,
       bonusShots: this.bonusShots,
       lastShotRadiusBonus: this.lastShotRadiusBonus,
+      shotsInVolley: this.shotsInVolley,
     };
   }
 
@@ -173,6 +231,14 @@ export class BurstSystem {
       ? Math.max(0, state.bonusShots)
       : 0;
     this.lastShotRadiusBonus = nonNegative(state.lastShotRadiusBonus);
+    this.shotsInVolley =
+      state.shotsInVolley !== undefined &&
+      Number.isInteger(state.shotsInVolley) &&
+      state.shotsInVolley >= 0
+        ? state.shotsInVolley
+        : 0;
+    // 续局恢复后没有“刚射出的一发”，H27 等到下一次真实发射再判定。
+    this.lastShotConsumed = false;
   }
 
   /** 冷却中返回 false，不重置弹药与失效计时。 */
@@ -180,18 +246,26 @@ export class BurstSystem {
     if (this.cooldownRemaining > TIME_EPSILON) return false;
 
     this.ammo = this.maxAmmo;
-    this.expiresAt = this.elapsed + this.config.ammoExpirySeconds;
+    this.shotsInVolley = 0;
+    this.lastShotConsumed = false;
+    this.expiresAt =
+      this.elapsed + this.config.ammoExpirySeconds * this.durationMultiplier;
     this.cooldownSeconds = this.config.cooldownSeconds * this.cooldownMultiplier;
     return true;
   }
 
   /**
    * 一发 J 实际射出时调用：有弹药则消耗一发并返回 true（本发为强化弹）。
-   * 未射出不调用，因此空射与冷却等待都不会扣弹。
+   * 未射出不调用，因此空射与冷却等待都不会扣弹；H27 的第三发计数同样只认这里。
    */
   consumeShot(): boolean {
-    if (this.ammo <= 0) return false;
+    if (this.ammo <= 0) {
+      this.lastShotConsumed = false;
+      return false;
+    }
     this.ammo -= 1;
+    this.shotsInVolley += 1;
+    this.lastShotConsumed = true;
     return true;
   }
 

@@ -12,13 +12,18 @@
  */
 import { distanceSquared, type DamageResult } from './combat';
 import { getUpgrade, type DamageType } from './data';
+import {
+  COOLDOWN_REDUCTION_CAP,
+  clampCooldownReduction,
+  clampDamageMultiplier,
+  clampMoveSpeedMultiplier,
+} from './stats';
 import type { UpgradeEffectsWorldSnapshot } from './world-snapshot';
+
+export { COOLDOWN_REDUCTION_CAP } from './stats';
 
 /** 浮点累计容差。 */
 const TIME_EPSILON = 1e-9;
-
-/** 冷却缩减总上限（docs/game-design.md §5）。 */
-export const COOLDOWN_REDUCTION_CAP = 0.4;
 
 /** 读取强化参数；缺失即报错，避免静默使用与 docs 不一致的默认值。 */
 function requireParam(upgradeId: string, key: string): number {
@@ -137,20 +142,20 @@ export class UpgradeEffects {
     return this.stacks(upgradeId) > 0;
   }
 
-  /** G01：所有自身与召唤物伤害倍率。 */
+  /** G01：所有自身与召唤物伤害倍率；同类百分比加算并遵守最低 0.25。 */
   get damageMultiplier(): number {
-    return 1 + G01_DAMAGE_BONUS_PER_STACK * this.stacks('G01');
+    return clampDamageMultiplier(1 + G01_DAMAGE_BONUS_PER_STACK * this.stacks('G01'));
   }
 
-  /** G02：玩家移动速度倍率；最低不跌破基础的 40%。 */
+  /** G02：玩家移动速度倍率；按 V0.2 结算范围 0.6–1.6。 */
   get moveSpeedMultiplier(): number {
-    return Math.max(0.4, 1 + G02_MOVE_SPEED_BONUS_PER_STACK * this.stacks('G02'));
+    return clampMoveSpeedMultiplier(1 + G02_MOVE_SPEED_BONUS_PER_STACK * this.stacks('G02'));
   }
 
-  /** G03：K/L 百分比冷却缩减，单独也受 40% 上限约束。 */
+  /** G03：K/L 百分比冷却缩减，单独也受 50% 上限约束。 */
   get cooldownReduction(): number {
     const raw = G03_COOLDOWN_REDUCTION_PER_STACK * this.stacks('G03');
-    return Math.min(COOLDOWN_REDUCTION_CAP, Math.max(0, raw));
+    return clampCooldownReduction(raw);
   }
 
   /** 实际冷却是基础冷却乘以该倍率。 */

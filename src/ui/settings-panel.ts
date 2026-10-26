@@ -15,11 +15,17 @@ import {
   type KeyBindingAction,
   type SettingsStore,
 } from '../game/settings';
+import {
+  markLegacySettingsImportDone,
+  readLegacySettingsForImport,
+} from '../game/legacy-settings';
 
 export interface SettingsPanelOptions {
   doc?: Document;
   store: SettingsStore;
   onBack: () => void;
+  /** 旧设置导入来源；默认使用当前页面 localStorage。 */
+  storage?: Storage | null;
 }
 
 export interface SettingsPanelHandle {
@@ -45,7 +51,7 @@ type SettingsRow =
     }
   | {
       readonly kind: 'action';
-      readonly id: 'reset' | 'back';
+      readonly id: 'legacy-import' | 'reset' | 'back';
       readonly label: string;
     };
 
@@ -55,7 +61,7 @@ const TOGGLE_LABELS: Readonly<Record<ToggleSettingKey, string>> = {
   reducedMotion: '减少动态效果',
 };
 
-const SETTINGS_ROWS: readonly SettingsRow[] = [
+const BASE_SETTINGS_ROWS: readonly SettingsRow[] = [
   ...KEY_BINDING_ACTIONS.map((action) => ({
     kind: 'binding' as const,
     id: `binding:${action}`,
@@ -79,16 +85,32 @@ const SETTINGS_ROWS: readonly SettingsRow[] = [
   { kind: 'action', id: 'back', label: '返回' },
 ];
 
+/** 只有存在待导入的 V0.1 设置时才插入的额外行动行。 */
+const LEGACY_IMPORT_ROW: SettingsRow = {
+  kind: 'action',
+  id: 'legacy-import',
+  label: '导入 V0.1 键位与音量',
+};
+
 const UP_KEYS = new Set(['ArrowUp', 'KeyW']);
 const DOWN_KEYS = new Set(['ArrowDown', 'KeyS']);
 const ACTIVATE_KEYS = new Set(['Enter', 'NumpadEnter', 'Space']);
 const BACK_KEYS = new Set(['Escape']);
 
-export function mountSettingsPanel({
-  doc = document,
-  store,
-  onBack,
-}: SettingsPanelOptions): SettingsPanelHandle {
+function defaultStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function mountSettingsPanel(
+  options: SettingsPanelOptions,
+): SettingsPanelHandle {
+  const { doc = document, store, onBack } = options;
+  const storage =
+    options.storage === undefined ? defaultStorage() : options.storage;
   const overlay = doc.querySelector<HTMLElement>('#settings-overlay');
   const list = doc.querySelector<HTMLElement>('#settings-list');
   const messageElement = doc.querySelector<HTMLElement>('#settings-message');
@@ -99,7 +121,27 @@ export function mountSettingsPanel({
     );
   }
 
-  const buttons = SETTINGS_ROWS.map((row) => {
+  let visible = false;
+  let focusIndex = 0;
+  let editingAction: KeyBindingAction | null = null;
+  let message = '';
+  let confirmingLegacyImport = false;
+  let rows: SettingsRow[] = [];
+  let buttons: HTMLButtonElement[] = [];
+
+  const legacyImportAvailable = (): boolean =>
+    readLegacySettingsForImport(storage).status === 'ready';
+
+  const buildRows = (): SettingsRow[] =>
+    legacyImportAvailable()
+      ? [
+          ...BASE_SETTINGS_ROWS.slice(0, -2),
+          LEGACY_IMPORT_ROW,
+          ...BASE_SETTINGS_ROWS.slice(-2),
+        ]
+      : [...BASE_SETTINGS_ROWS];
+
+  const createButton = (row: SettingsRow): HTMLButtonElement => {
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'settings-row';
@@ -115,14 +157,7 @@ export function mountSettingsPanel({
       renderFocus();
     });
     return button;
-  });
-  list.setAttribute('role', 'menu');
-  list.replaceChildren(...buttons);
-
-  let visible = false;
-  let focusIndex = 0;
-  let editingAction: KeyBindingAction | null = null;
-  let message = '';
+  };
 
   const renderFocus = (): void => {
     buttons.forEach((button, index) => {
@@ -133,6 +168,15 @@ export function mountSettingsPanel({
     });
   };
 
+  const rebuildRows = (): void => {
+    rows = buildRows();
+    buttons = rows.map(createButton);
+    list.setAttribute('role', 'menu');
+    list.replaceChildren(...buttons);
+    if (focusIndex >= buttons.length) focusIndex = Math.max(0, buttons.length - 1);
+    renderFocus();
+  };
+
   const focusCurrent = (): void => {
     const button = buttons[focusIndex];
     button?.focus({ preventScroll: true });
@@ -141,7 +185,7 @@ export function mountSettingsPanel({
 
   const render = (): void => {
     const settings = store.get();
-    SETTINGS_ROWS.forEach((row, index) => {
+    rows.forEach((row, index) => {
       const button = buttons[index];
       if (!button) return;
       let value = '';
@@ -177,8 +221,26 @@ export function mountSettingsPanel({
     render();
   };
 
+  const confirmLegacyImport = (): void => {
+    const result = readLegacySettingsForImport(storage);
+    confirmingLegacyImport = false;
+    if (result.status === 'ready') {
+      store.importLegacySettings(result.settings);
+      markLegacySettingsImportDone(storage);
+      message = '已导入 V0.1 键位与音量；旧构筑、成绩与进度未导入';
+    } else if (result.status === 'already-imported') {
+      message = 'V0.1 设置已经导入过';
+    } else if (result.status === 'corrupt') {
+      message = 'V0.1 设置无法读取，已保持默认值';
+    } else {
+      message = '没有找到可导入的 V0.1 设置';
+    }
+    rebuildRows();
+    render();
+  };
+
   const activate = (): void => {
-    const row = SETTINGS_ROWS[focusIndex];
+    const row = rows[focusIndex];
     if (!row) return;
     if (row.kind === 'binding') {
       editingAction = row.action;
@@ -188,6 +250,18 @@ export function mountSettingsPanel({
     }
     if (row.kind === 'toggle') {
       toggle(row.key);
+      return;
+    }
+    if (row.id === 'legacy-import') {
+      if (!confirmingLegacyImport) {
+        confirmingLegacyImport = true;
+        message =
+          '确认导入 V0.1 的键位与音量？旧构筑、成绩与进度不会导入。Enter 确认，Esc 取消';
+      } else {
+        confirmLegacyImport();
+        return;
+      }
+      render();
       return;
     }
     if (row.id === 'reset') {
@@ -260,13 +334,21 @@ export function mountSettingsPanel({
     }
     if (BACK_KEYS.has(event.code)) {
       event.preventDefault();
-      if (!event.repeat) back();
+      if (event.repeat) return;
+      if (confirmingLegacyImport) {
+        confirmingLegacyImport = false;
+        message = '已取消导入，V0.1 设置保持不变';
+        render();
+        return;
+      }
+      back();
     }
   }
 
   const hide = (): void => {
     visible = false;
     editingAction = null;
+    confirmingLegacyImport = false;
     message = '';
     doc.removeEventListener('keydown', onKeyDown);
     overlay.hidden = true;
@@ -281,11 +363,13 @@ export function mountSettingsPanel({
   const show = (): void => {
     visible = true;
     editingAction = null;
+    confirmingLegacyImport = false;
     message = '';
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
     doc.removeEventListener('keydown', onKeyDown);
     doc.addEventListener('keydown', onKeyDown);
+    rebuildRows();
     render();
     focusCurrent();
   };
@@ -296,6 +380,7 @@ export function mountSettingsPanel({
 
   overlay.hidden = true;
   overlay.setAttribute('aria-hidden', 'true');
+  rebuildRows();
   render();
 
   return {

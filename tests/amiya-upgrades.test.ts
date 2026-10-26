@@ -68,7 +68,7 @@ describe('A01 穿透术式', () => {
       { x: 0, y: 100 },
       'east',
       AMIYA.attack,
-      amiyaJPierce(1),
+      { pierce: amiyaJPierce(1) },
     );
     expect(projectile.pierce).toEqual({
       extraTargets: A01_EXTRA_PIERCE,
@@ -97,7 +97,7 @@ describe('A01 穿透术式', () => {
       { x: 0, y: 100 },
       'east',
       AMIYA.attack,
-      amiyaJPierce(1),
+      { pierce: amiyaJPierce(1) },
     );
 
     resolveProjectileHit(projectile, target);

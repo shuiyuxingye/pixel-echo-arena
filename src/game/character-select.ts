@@ -13,7 +13,7 @@ import {
   type CharacterId,
   type DamageType,
 } from './data';
-import { PLAYER_ART } from './player-art';
+import { playerArtFor } from './player-art';
 
 /** 选角页从左到右、从上到下的固定顺序（与角色数据顺序一致）。 */
 export const CHARACTER_SELECT_ORDER: readonly CharacterId[] = CHARACTER_LIST.map(
@@ -23,8 +23,7 @@ export const CHARACTER_SELECT_ORDER: readonly CharacterId[] = CHARACTER_LIST.map
 /** 选角卡片单行四列；焦点左右移动，布局边界不换行。 */
 export const CHARACTER_SELECT_COLUMNS = 4;
 
-/** 预览使用与场内相同的 64×64 精灵表，按 4 倍最近邻放大显示（§8）。 */
-export const CHARACTER_PREVIEW_SCALE = 4;
+/** 预览沿用各自场内精灵表并做整数倍最近邻放大（见 `PlayerArtSpec.previewScale`）。 */
 
 /** 六向定位摘要（docs/game-design.md §5）。 */
 export const CHARACTER_ROLES: Readonly<Record<CharacterId, string>> = {
@@ -58,7 +57,7 @@ export interface CharacterSelectSkillSummary {
 }
 
 export interface CharacterPreview {
-  /** 场内同一张精灵表（512×320，8×5 帧）。 */
+  /** 场内同一张精灵表；四名角色均为 864×480 的 9×5 帧（每帧 96×96）。 */
   readonly path: string;
   readonly sheetWidth: number;
   readonly sheetHeight: number;
@@ -105,6 +104,7 @@ function describeAttack(attack: AttackDefinition): string {
 }
 
 function createEntry(character: CharacterDefinition): CharacterSelectEntry {
+  const art = playerArtFor(character.id);
   return {
     id: character.id,
     name: character.name,
@@ -117,15 +117,15 @@ function createEntry(character: CharacterDefinition): CharacterSelectEntry {
     },
     preview: {
       path: CHARACTER_PREVIEW_PATHS[character.id],
-      sheetWidth: PLAYER_ART.sheetWidth,
-      sheetHeight: PLAYER_ART.sheetHeight,
-      frameWidth: PLAYER_ART.frameWidth,
-      frameHeight: PLAYER_ART.frameHeight,
+      sheetWidth: art.sheetWidth,
+      sheetHeight: art.sheetHeight,
+      frameWidth: art.frameWidth,
+      frameHeight: art.frameHeight,
       column: 0,
       row: 0,
-      scale: CHARACTER_PREVIEW_SCALE,
-      width: PLAYER_ART.frameWidth * CHARACTER_PREVIEW_SCALE,
-      height: PLAYER_ART.frameHeight * CHARACTER_PREVIEW_SCALE,
+      scale: art.previewScale,
+      width: art.frameWidth * art.previewScale,
+      height: art.frameHeight * art.previewScale,
     },
     skills: [
       {

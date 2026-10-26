@@ -3,6 +3,7 @@
  *
  * 纯逻辑模块：不依赖 Phaser/DOM，场景只负责把这里产出的字段渲染到文本与图标上。
  * - 所有数值字段都带文字标签，不允许只显示图形；
+ * - 金币与击杀分开显示，金币随击杀即时入账；
  * - J/K/L 每个技能槽包含按键徽标、技能名、状态与冷却秒数；
  * - 字号按逻辑像素定义，1280×720 下最小字号仍 ≥16 CSS px；
  * - 视口用等比缩放 + letterbox，绝不非等比拉伸像素。
@@ -10,6 +11,7 @@
 
 import { hudValue } from './combat';
 import { getCharacter, type CharacterId } from './data';
+import { INITIAL_GOLD } from './economy';
 import { DODGE } from './movement';
 
 /** 与 Phaser 逻辑视口一致；HUD 按该坐标系排版后由 Scale.FIT 等比缩放。 */
@@ -176,8 +178,88 @@ export function computeHudSkillBarLayout(): HudSkillBarLayout {
   };
 }
 
-/** 技能图标形状；场景按此绘制小型几何图形，不用 Emoji 或文字代替角色。 */
-export type HudIconShape =
+/** 两个自由技能槽在底部主技能条上方单独成条，避免挤压 J/K/L 的名称宽度。 */
+export const HUD_FREE_SKILL_BAR = {
+  slotWidth: 300,
+  slotHeight: 80,
+  slotGap: 8,
+  marginAbove: 8,
+} as const;
+
+export type HudFreeSkillSlotKey = 'U' | 'I';
+
+export interface HudFreeSkillBarLayout {
+  readonly y: number;
+  readonly height: number;
+  readonly slots: Readonly<Record<HudFreeSkillSlotKey, HudRect>>;
+}
+
+/** 自由技能条：U/I 两槽居中排在主技能条上方。 */
+export function computeHudFreeSkillBarLayout(): HudFreeSkillBarLayout {
+  const { slotWidth, slotHeight, slotGap, marginAbove } = HUD_FREE_SKILL_BAR;
+  const main = computeHudSkillBarLayout();
+  const y = main.y - marginAbove - slotHeight;
+  const keys: readonly HudFreeSkillSlotKey[] = ['U', 'I'];
+  const totalWidth = slotWidth * keys.length + slotGap * (keys.length - 1);
+  const startX = (HUD_DESIGN.width - totalWidth) / 2;
+  const slots = {} as Record<HudFreeSkillSlotKey, HudRect>;
+  keys.forEach((key, index) => {
+    slots[key] = {
+      x: startX + index * (slotWidth + slotGap),
+      y,
+      width: slotWidth,
+      height: slotHeight,
+    };
+  });
+  return { y, height: slotHeight, slots };
+}
+
+/**
+ * 自由技能图标：按技能 ID 的定位给一个可区分的几何形状与主色，
+ * 不用逐帧美术；文字名称与冷却仍由槽位文本承担。
+ */
+export function hudFreeSkillIcon(skillId: string): HudIconSpec {
+  switch (skillId) {
+    case 'S01':
+      return { shape: 'spark', color: 0xffb347, label: '#ffd166' };
+    case 'S02':
+      return { shape: 'wave', color: 0x8fd3ff, label: '#b9e4ff' };
+    case 'S03':
+      return { shape: 'bolt', color: 0xc77dff, label: '#e0c0ff' };
+    case 'S04':
+      return { shape: 'drop', color: 0xff9a5a, label: '#ffc49a' };
+    case 'S05':
+      return { shape: 'field', color: 0x5fd8d0, label: '#9df2dd' };
+    case 'S06':
+      return { shape: 'wave', color: 0x9df2bc, label: '#c8ffd6' };
+    case 'S07':
+      return { shape: 'shield', color: 0xffd166, label: '#ffe9a8' };
+    case 'S08':
+      return { shape: 'field', color: 0xb28bff, label: '#d9c8ff' };
+    case 'S09':
+      return { shape: 'drop', color: 0x5fd8d0, label: '#9df2dd' };
+    case 'S10':
+      return { shape: 'shield', color: 0xffe08a, label: '#fff0c2' };
+    case 'S11':
+      return { shape: 'bolt', color: 0xffc46b, label: '#ffe0b0' };
+    case 'S12':
+      return { shape: 'orb', color: 0xffd166, label: '#ffe9a8' };
+    default:
+      return { shape: 'spark', color: 0xcfc4b6, label: '#e6ded2' };
+  }
+}
+
+/** 自由技能槽状态文字：空槽/冷却/就绪；说明文本由槽位单独展示。 */
+export function freeSkillStatusText(
+  empty: boolean,
+  cooldownRemaining: number,
+): string {
+  if (empty) return '空槽 · 商店装备';
+  if (cooldownRemaining > 0) return `冷却 ${formatSeconds(cooldownRemaining)}`;
+  return '就绪';
+}
+
+/** 技能图标形状；场景按此绘制小型几何图形，不用 Emoji 或文字代替角色。 */export type HudIconShape =
   | 'shell'
   | 'bolt'
   | 'spark'
@@ -259,7 +341,13 @@ export interface HudState {
   readonly experience: number;
   readonly experienceToNextLevel: number;
   readonly wave: number;
+  /** 本波剩余秒数；无波次或未知时为 null。 */
+  readonly waveRemainingSeconds: number | null;
+  /** Boss 波没有倒计时。 */
+  readonly waveUnlimited: boolean;
   readonly kills: number;
+  /** 当前金币；击杀直接入账，不生成拾取物。 */
+  readonly gold: number;
   readonly aliveEnemies: number;
   readonly target: HudTargetState | null;
   readonly dodgeCooldownRemaining: number;
@@ -292,8 +380,13 @@ export type HudEvent =
       readonly wave: number;
       readonly kills: number;
       readonly aliveEnemies: number;
+      /** 本波剩余秒数；Boss 波或未知时传 null。 */
+      readonly remainingSeconds?: number | null;
+      /** Boss 波没有倒计时。 */
+      readonly unlimited?: boolean;
     }
   | { readonly type: 'target'; readonly target: HudTargetState | null }
+  | { readonly type: 'gold'; readonly gold: number }
   | {
       readonly type: 'dodge';
       readonly cooldownRemaining: number;
@@ -338,9 +431,12 @@ export function createHudState(characterId: CharacterId): HudState {
     shieldRemaining: 0,
     level: 1,
     experience: 0,
-    experienceToNextLevel: 40,
+    experienceToNextLevel: 50,
     wave: 1,
+    waveRemainingSeconds: null,
+    waveUnlimited: false,
     kills: 0,
+    gold: INITIAL_GOLD,
     aliveEnemies: 0,
     target: null,
     dodgeCooldownRemaining: 0,
@@ -408,9 +504,19 @@ export function applyHudEvent(state: HudState, event: HudEvent): HudState {
         wave: Math.max(1, safeInteger(event.wave, state.wave)),
         kills: safeInteger(event.kills, state.kills),
         aliveEnemies: safeInteger(event.aliveEnemies, state.aliveEnemies),
+        waveRemainingSeconds:
+          event.remainingSeconds === undefined
+            ? state.waveRemainingSeconds
+            : event.remainingSeconds === null || !Number.isFinite(event.remainingSeconds)
+              ? null
+              : nonNegative(event.remainingSeconds),
+        waveUnlimited:
+          event.unlimited === undefined ? state.waveUnlimited : event.unlimited === true,
       };
     case 'target':
       return { ...state, target: event.target };
+    case 'gold':
+      return { ...state, gold: safeInteger(event.gold, state.gold) };
     case 'dodge':
       return {
         ...state,
@@ -443,6 +549,7 @@ export type HudFieldId =
   | 'experience'
   | 'wave'
   | 'kills'
+  | 'gold'
   | 'dodge'
   | 'skill-J'
   | 'skill-K'
@@ -487,6 +594,7 @@ export interface HudModel {
     readonly progress: string;
     readonly wave: string;
     readonly kills: string;
+    readonly gold: string;
     readonly dodge: string;
     readonly resource: string;
     readonly skillDetail: string;
@@ -575,7 +683,13 @@ export function buildHudModel(state: HudState): HudModel {
   const experienceField = field('experience', '经验', experienceValue);
   const levelField = field('level', '等级', `${Math.max(1, Math.floor(state.level))}`);
   const waveField = field('wave', '波次', `第 ${Math.max(1, Math.floor(state.wave))} 波`);
+  const waveTimer = state.waveUnlimited
+    ? ' · Boss · 无时限'
+    : state.waveRemainingSeconds !== null
+      ? ` · 剩余 ${Math.max(0, Math.ceil(state.waveRemainingSeconds))}s`
+      : '';
   const killsField = field('kills', '击杀', `${Math.max(0, Math.floor(state.kills))}`);
+  const goldField = field('gold', '金币', `${Math.max(0, Math.floor(state.gold))}`);
 
   const targetValue = state.target
     ? `${state.target.label} ${hudValue(state.target.health)}/${hudValue(state.target.maxHealth)}`
@@ -629,6 +743,7 @@ export function buildHudModel(state: HudState): HudModel {
     experienceField,
     waveField,
     killsField,
+    goldField,
     dodgeField,
     ...skills.map((view) => {
       const skill = state.skills[view.key];
@@ -644,8 +759,9 @@ export function buildHudModel(state: HudState): HudModel {
       target: targetField.text,
       vitals: `${healthField.text} · ${shieldField.text}`,
       progress: `${levelField.text} · ${experienceField.text}`,
-      wave: `${waveField.text} · 存活敌人 ${Math.max(0, Math.floor(state.aliveEnemies))}`,
+      wave: `${waveField.text} · 存活敌人 ${Math.max(0, Math.floor(state.aliveEnemies))}${waveTimer}`,
       kills: killsField.text,
+      gold: goldField.text,
       dodge: dodgeField.text,
       resource: resourceField.text,
       skillDetail: state.skillDetail,

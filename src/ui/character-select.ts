@@ -1,5 +1,5 @@
 /**
- * DOM 选角页：四名角色的键盘焦点、64×64 场内精灵预览、J/K/L 与被动摘要。
+ * DOM 选角页：四名角色的键盘焦点、按角色倍率放大的场内精灵预览、J/K/L 与被动摘要。
  * 不依赖 Phaser；确认后由应用壳创建新一局。
  */
 
@@ -80,12 +80,13 @@ function createCard(doc: Document, entry: CharacterSelectEntry): HTMLButtonEleme
   );
   body.append(head);
 
-  const stats = createElement(
-    doc,
-    'span',
-    'character-card-stats',
-    `生命 ${entry.stats.maxHealth} · 护甲 ${entry.stats.armor} · 法抗 ${entry.stats.magicResistPercent}% · 移速 ${entry.stats.moveSpeed}`,
-  );
+  const stats = createElement(doc, 'span', 'character-card-stats');
+  for (const stat of [
+    `生命 ${entry.stats.maxHealth}`,
+    `护甲 ${entry.stats.armor}`,
+    `法抗 ${entry.stats.magicResistPercent}%`,
+    `移速 ${entry.stats.moveSpeed}`,
+  ]) stats.append(createElement(doc, 'span', 'character-card-stat', stat));
   body.append(stats);
 
   for (const skill of entry.skills) {

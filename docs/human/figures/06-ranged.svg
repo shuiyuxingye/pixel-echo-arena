@@ -860,7 +860,7 @@
 <rect x="110.5" y="185.0" width="20.0" height="2.5" rx="0" fill="#191521" stroke="none" stroke-width="1"/>
 <rect x="130.5" y="185.0" width="2.5" height="2.5" rx="0" fill="#17131f" stroke="none" stroke-width="1"/>
 <rect x="83.0" y="187.5" width="50.0" height="2.5" rx="0" fill="#17131f" stroke="none" stroke-width="1"/>
-<text x="210" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#C65757" text-anchor="start">维什戴尔</text>
+<text x="210" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#C65757" text-anchor="start">爆破手</text>
 <text x="210" y="135" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="start">铺标记</text>
 <text x="210" y="170" font-family="STHeiti, PingFang SC, sans-serif" font-size="20" fill="#51636C" text-anchor="start">榴弹余震 → 爆破清群</text>
 <rect x="510" y="20" width="470" height="230" rx="12" fill="#FFFFFF" stroke="none" stroke-width="1"/>
@@ -1622,7 +1622,7 @@
 <rect x="600.5" y="185.0" width="20.0" height="2.5" rx="0" fill="#151726" stroke="none" stroke-width="1"/>
 <rect x="620.5" y="185.0" width="2.5" height="2.5" rx="0" fill="#1a1420" stroke="none" stroke-width="1"/>
 <rect x="573.0" y="187.5" width="50.0" height="2.5" rx="0" fill="#1a1420" stroke="none" stroke-width="1"/>
-<text x="700" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#087F8C" text-anchor="start">阿米娅</text>
+<text x="700" y="90" font-family="STHeiti, PingFang SC, sans-serif" font-size="28" fill="#087F8C" text-anchor="start">术士</text>
 <text x="700" y="135" font-family="STHeiti, PingFang SC, sans-serif" font-size="22" fill="#172B36" text-anchor="start">术式命中</text>
 <text x="700" y="170" font-family="STHeiti, PingFang SC, sans-serif" font-size="20" fill="#51636C" text-anchor="start">冷却回转 → 真伤窗口</text>
 </svg>
