@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy only this game's inline build to the existing authenticated showcase.
+# Deploy only this game's inline build; /game/ is public, other showcase ACLs stay unchanged.
 # Credentials are provided by the user's SSH agent/config; never copy them into the package.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -76,10 +76,10 @@ if ! curl -fsS --max-time 8 http://127.0.0.1:8787/_auth/api/me >/dev/null; then
   rollback; echo 'Auth health check failed.' >&2; exit 1
 fi
 if ! status=$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/game/); then
-  rollback; echo 'Login redirect check could not complete.' >&2; exit 1
+  rollback; echo 'Public game check could not complete.' >&2; exit 1
 fi
-if [ "$status" != 303 ]; then
-  rollback; echo "Expected unchanged login redirect, got $status" >&2; exit 1
+if [ "$status" != 200 ]; then
+  rollback; echo "Expected public game HTTP 200, got $status" >&2; exit 1
 fi
 if ! home=$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/); then
   rollback; echo 'Homepage check could not complete.' >&2; exit 1
